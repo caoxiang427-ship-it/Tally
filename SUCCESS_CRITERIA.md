@@ -67,3 +67,8 @@ Reported as median seconds per comment and total time to process 1,000 comments,
 target on the order of a few minutes per 1,000. Reported as evidence of throughput awareness
 rather than a pass/fail gate.
 
+## 5. Scope
+
+Theme classification is evaluated against CFPB's human labels. Sentiment is produced as an
+illustrative feature and is not formally evaluated, as no labeled sentiment ground truth
+is used.
