@@ -1,122 +1,98 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useState } from "react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+const API = "http://127.0.0.1:8000";
+
+export default function App() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleUpload(e) {
+    const file = e.target.files[0];
+    
+    if (!file) return;
+
+    setLoading(true);
+    setError("");
+    setData(null);
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch(`${API}/analyze?column=text`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      setData(await res.json());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const themeData = data
+    ? Object.entries(data.theme_counts)
+        .map(([theme, count]) => ({ theme, count }))
+        .sort((a, b) => b.count - a.count)
+    : [];
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+    <div className="app">
+      <h1>Tally</h1>
+      <p className="tagline">GROUP BY for text. Upload feedback, get themes.</p>
+
+      <label className="upload">
+        {loading ? "Analyzing…" : "Upload CSV (needs a 'text' column)"}
+        <input type="file" accept=".csv" onChange={handleUpload} hidden />
+      </label>
+
+      {error && <p className="error">{error}</p>}
+
+      {data && (
+        <div className="results">
+          <p className="summary">
+            Analyzed <b>{data.total}</b> comments into{" "}
+            <b>{Object.keys(data.theme_counts).length}</b> themes.
           </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
 
-      <div className="ticks"></div>
+          <h2>Themes</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={themeData} layout="vertical"
+                      margin={{ left: 40, right: 20 }}>
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis type="category" dataKey="theme" width={140} />
+              <Tooltip />
+              <Bar dataKey="count">
+                {themeData.map((_, i) => (
+                  <Cell key={i} fill="#4f46e5" />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+          <h2>Sentiment</h2>
+          <div className="sentiment">
+            {Object.entries(data.sentiment_counts).map(([s, n]) => (
+              <span key={s} className={`chip ${s}`}>{s}: {n}</span>
+            ))}
+          </div>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+          <h2>Examples by theme</h2>
+          {Object.entries(data.examples).map(([theme, quotes]) => (
+            <div key={theme} className="example">
+              <b>{theme}</b>
+              <ul>{quotes.map((q, i) => <li key={i}>"{q}"</li>)}</ul>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
-
-export default App
