@@ -46,6 +46,13 @@ def classify_comment(comment, themes):
     text = text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
 
+def get_themes(comments, fixed_themes=None, n_themes=6):
+   """Use a fixed category list if given (for evaluation);
+   otherwise discover themes (for the live product)."""
+   if fixed_themes is not None:
+      return fixed_themes
+   return discover_themes(comments, n_themes)
+
 if __name__ == "__main__":
     with open("sample_comments.txt") as f:
         comments = [line.strip() for line in f if line.strip()]
