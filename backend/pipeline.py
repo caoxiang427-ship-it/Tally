@@ -14,8 +14,14 @@ def _discover_once(comments, n_themes=6):
     prompt = (
         f"Here are open-ended feedback comments:\n\n{sample}\n\n"
         f"Identify the {n_themes} most common recurring themes. "
+        "Name each theme as a NEUTRAL TOPIC, not a problem "
+        "(e.g. \"Delivery speed\", not \"Delivery issues\"; "
+        "\"Pricing\", not \"High price\"), so that both positive and negative "
+        "comments about the same topic share one theme. "
+        "The themes must collectively cover the comments, including positive "
+        "feedback and non-complaint topics. Do not produce only problem themes. "
         "Return ONLY a JSON array of short theme names (2-4 words each), "
-        "no explanation. Example: [\"Slow delivery\", \"High price\"]"
+        "no explanation. Example: [\"Delivery speed\", \"Pricing\"]"
     )
     resp = client.chat.completions.create(
         model=MODEL,
@@ -55,6 +61,7 @@ def discover_themes(comments, n_themes=6, n_samples=3, sample_size=150, seed=42)
         f"{shown}\n\n"
         f"Merge them into ONE list of exactly {n_themes} themes. "
         "Combine themes that mean the same thing under a single clear name. "
+        "Keep names as neutral topics, not problems. "
         "Prefer themes that appear in more than one list. "
         "Return ONLY a JSON array of theme names, no explanation. "
     )   
