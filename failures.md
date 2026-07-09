@@ -3,6 +3,10 @@
 A running log of bugs, unexpected behaviours, and identified limitations,
 maintained from Day 3 onward rather than reconstructed at the end.
 
+**[Fixed]** — addressed, with the fix described.
+**[Inherent]** — a real limitation that remains, by design or by nature of the model.
+**[Finding]** — not a failure, but something the process revealed.
+
 ## Day 3 - Pipeline and dashboard
 
 ### [Fixed] Theme discovery reflected the sample rather than the dataset
@@ -12,18 +16,45 @@ negative theme list. The 2 positive comments did not fit any discovered
 theme and were classified as "Other." Theme quality therefore depends
 on how representative the discovery sample is.
 
-*Fix (Day 4):* Theme discovery now runs on several independent random samples
+**Fix (Day 4):** Theme discovery now runs on several independent random samples
 drawn from the full dataset before merging the resulting theme lists into a
 single consensus list. Themes recurring across samples are treated as robust,
 while one-off themes are treated as sample noise. Random sampling also replaced
-the preivous "first N comments" approach, making discovered themes representative
+the previous "first N comments" approach, making discovered themes representative
 of the dataset rather than its opening rows.
 
-*Cost note:* This increases discovery from one API call to four. Since discovery
+**Cost note:** This increases discovery from one API call to four. Since discovery
 runs only once per upload, not once per comment. The additional cost is negligible
 compared with per-comment classification. 
 
-### Single-label classification oversimplifies multi-theme comments
+### [Fixed] Discovered theme names encoded sentiment
+
+"Shipping was super fast" was classified under **"Delivery issues"** with 
+**positive** sentiment, creating a contradiction. Because the discovery sample was
+dominated by complaints, the model named themes as problems rather than neutral topics,
+conflating **theme** and **sentiment** into a single dimension.
+
+**Fix (Day 4):** The discovery prompt now requires neutral, topic-based theme names
+(e.g., **"Delivery speed"** instead of **"Delivery issues"**) and explicit coverage of
+positive and non-complaint topics. The in-prompt example was changed too as it previously
+demonstrated problem-style names.
+
+**Effect:** **"Delivery speed"** now captures both complaints about slow shipping and praise
+for fast delivery, while **"App performance"** emerged as a distinct theme.
+The **"Other"** rate on the sample fell to zero. Two cases previously recorded as 
+classification errors (*"app crashes"* -> **"Payment issues"** and 
+*"Love it"* -> **"Other"**) also disappeared without any changes to the classifier itself,
+indicating that they were also caused by incomplete theme coverage rather than
+classification errors.
+
+### [Inherent] Theme-list capacity limits coverage
+
+With `n_themes` fixed at 6, datasets containing more than 6 meaningful topics inevitably requires
+some topics to be merged or misassigned. For example, *"Payment failed twice and I got charged anyway"* was classified under **"Pricing"** because no dedicated payments or billing theme existed.
+This is a capacity limitation rather than a classification error. The appropriate mitigation is to
+choose `n_themes` according to the dataset or expose it as a configurable user setting.
+
+### Single-labeled classification oversimplifies multi-theme comments
 
 A comment such as "The item arrived broken and returns were a nightmare"
 was assigned only "Customer service issues" rather than "Damaged items."
@@ -45,7 +76,7 @@ strategy further reduces instability by favouring themes that recur across indep
 samples. Run-to-run consistency is measured and reported explicitly (Day 5) rather
 than assumed.
 
-### [Expected] Discovered themes may receive no assignments
+### [Expected -> Fixed] Discovered themes may receive no assignments
 In one run, "Poor communication" was discovered as a theme, yet no comments were 
 ultimately classified into it. As a result, the theme appeared in the 
 discovered theme list but not in the dashboard counts. 
@@ -58,12 +89,28 @@ the same comment must be assigned exactly one primary theme. A theme that is nev
 dominant concern of any individual comment can therefore be discovered but never assigned.
 Zero-count themes are simply the visible consequence of this information loss.
 
-*Fix (Day 4)*: Theme counts are now initialised to zero for every discovered theme,
+**Fix (Day 4)**: Theme counts are now initialised to zero for every discovered theme,
 ensuring that such themes appear as empty bars rather than disappearing entirely.
 This accurately communicates that the topic exists in the feedback but is never the primary
 concern of any single comment.
 
 ## Day 4 - Evaluation set and baselines
+
+### [Finding] Discovered themes organise by issue type, not product category
+Running theme discovery on 360 real CFPB complaints produced the themes 
+**Credit reporting, Loan servicing, Account access, Fraud disputes, Fees and charges,**
+and **Customer support.**
+
+The CFPB's human labels, by contrast, are **product categories: Credit reporting, Debt
+collection, Mortgage, Credit card, Checking or savings account,** and **Student loan.**
+Only **Credit reporting** appears in both taxonomies.
+
+This observation has two important implications. First, it demonstrates that evaluating
+discovered themes directly against CFPB product labels would be conceptually unsound, 
+since the two taxonomies are not measuring the same construct. This justifies bypassing theme
+discovery and using the fixed CFPB categories for the accuracy evaluation. Second, the discovered
+taxonomy is arguably more actionable in practice: **Fees and charges** identifies a specific
+class of problems to investigate, whereas **Mortgage** identifies only the product involved.
 
 ### [Fixed] CFPB date field is inconsistent
 
