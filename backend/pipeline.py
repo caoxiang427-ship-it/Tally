@@ -47,11 +47,11 @@ def classify_comment(comment, themes):
     return json.loads(text)
 
 def get_themes(comments, fixed_themes=None, n_themes=6):
-   """Use a fixed category list if given (for evaluation);
-   otherwise discover themes (for the live product)."""
-   if fixed_themes is not None:
-      return fixed_themes
-   return discover_themes(comments, n_themes)
+    """Use a fixed category list if given (for evaluation);
+    otherwise discover themes (for the live product)."""
+    if fixed_themes is not None:
+        return fixed_themes
+    return discover_themes(comments, n_themes)
 
 if __name__ == "__main__":
     with open("sample_comments.txt") as f:
@@ -66,5 +66,5 @@ if __name__ == "__main__":
     # Pass 2:
     print("\nClassifications:")
     for c in comments:
-      result = classify_comment(c, themes)
-      print(f'[{result["theme"]}] ({result["sentiment"]}) {c}')
+        result = classify_comment(c, themes)
+        print(f'[{result["theme"]}] ({result["sentiment"]}) {c}')
