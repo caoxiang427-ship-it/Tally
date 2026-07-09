@@ -1,5 +1,6 @@
 import os
 import json
+import random
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -7,9 +8,8 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-5.4-mini"   # one place to swap models later
 
-
-def discover_themes(comments, n_themes=6):
-    """Pass 1: read a sample, return a fixed list of themes."""
+def _discover_once(comments, n_themes=6):
+    """One discovery pass over one sample"""
     sample = "\n".join(f"- {c}" for c in comments)
     prompt = (
         f"Here are open-ended feedback comments:\n\n{sample}\n\n"
@@ -17,6 +17,47 @@ def discover_themes(comments, n_themes=6):
         "Return ONLY a JSON array of short theme names (2-4 words each), "
         "no explanation. Example: [\"Slow delivery\", \"High price\"]"
     )
+    resp = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0,
+    )
+    text = resp.choices[0].message.content.strip()
+    text = text.replace("```json", "").replace("```", "").strip()
+    return json.loads(text)
+
+def discover_themes(comments, n_themes=6, n_samples=3, sample_size=150, seed=42):
+    """Pass 1: discover themes from several random samples, then merge.
+
+    Themes that recur across independent samples are more likely to represent
+    genuine patterns, while themes appearing only once are treated as sample noise.
+    """
+
+    rng = random.Random(seed)
+
+    # If there are not many comments, one pass over everything is enough
+    if len(comments) <= sample_size:
+        return _discover_once(comments, n_themes)
+
+    # Run theme discovery on n_samples independently sampled subsets
+    all_lists = []
+    for _ in range(n_samples):
+        subset = rng.sample(comments, sample_size)
+        all_lists.append(_discover_once(subset, n_themes))
+
+    # Merge: ask the model to consolidate the lists into one
+    shown = "\n".join(
+        f"List {i+1}: {json.dumps(lst)}" for i, lst in enumerate(all_lists)
+    )
+    
+    prompt = (
+        f"{n_samples} independent analyses of the same feedback produced these theme lists:\n\n" 
+        f"{shown}\n\n"
+        f"Merge them into ONE list of exactly {n_themes} themes. "
+        "Combine themes that mean the same thing under a single clear name. "
+        "Prefer themes that appear in more than one list. "
+        "Return ONLY a JSON array of theme names, no explanation. "
+    )   
     resp = client.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],

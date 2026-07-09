@@ -27,7 +27,11 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         r = classify_comment(c, themes)
         results.append({"comment": c, "theme": r["theme"], "sentiment": r["sentiment"]})
 
-    theme_counts = Counter(r["theme"] for r in results)
+    # Make zero-count themes visible
+    theme_counts = {t: 0 for t in themes}
+    for r in results:
+        theme_counts[r["theme"]] = theme_counts.get(r["theme"], 0) + 1
+
     sentiment_counts = Counter(r["sentiment"] for r in results)
 
     examples = {}
