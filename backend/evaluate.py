@@ -23,7 +23,11 @@ score("Baseline 1 — Keyword matching", base["pred_keyword"])
 score("Baseline 2 — TF-IDF + LogReg",  base["pred_tfidf"])
 score("Tally — LLM (gpt-5.4-mini)",    base["pred_llm"])
 
+frontier = pd.read_csv("data/predictions_frontier.csv")
+score("Frontier — LLM (gpt-5.4)", frontier["pred_llm"])
+
+
 # Per-class detail for the LLM (shows where it wins/loses)
 print("\n" + "=" * 40)
 print("LLM per-category breakdown:")
-print(classification_report(y_true, base["pred_llm"]))
+print(classification_report(y_true, base["pred_llm"], zero_division=0))
