@@ -138,4 +138,28 @@ uncertain cases. As a result, it serves only as a deliberately weak lower bound,
 motivating the inclusion of TF-IDF + Logistic Regression as a stronger and more 
 credible baseline.
 
-## Day 5 - (to be added)
+## Day 5 - Evaluation and interpretation
+
+### [Finding] Metric disagreement between macro-F1 and κ, caused by abstention
+TF-IDF led macro-F1 (0.779 vs 0.736) and Tally led Cohen's κ (0.827 vs 0.737).
+The gap traces to abstention: Tally assigned "Other" to 3/360 complaints, and
+since no true label is ever "Other," these count against macro-F1. Inspection of
+the three showed genuine edge cases (a non-complaint, an e-commerce issue labeled
+"Credit card", and a cross-category scam). In at least two, "Other" arguably fits
+the text better than the assigned CFPB label. The small macro-F1 gap therefore
+reflects a decision to abstain on hard cases, not weaker classification. 
+
+### [Finding] Run-to-run instability tracks genuine ambiguity
+Consistency measured ~97-98% (58-59 / 60 across two measurements; the figure
+varies slightly between measurements, as expected for a stochastic system).
+Disagreements are not random: they fall on complaints that legitimately belong to
+two adjacent categories (e.g. a collections letter that also appears on a credit
+report), where the model alternates between two defensible labels. Instability is
+concentrated where the ground truth is itself ambiguous, not spread across
+clear-cut cases.
+
+### [Note] Macro-F1 has no absolute interpretation
+Unlike κ (interpreted on the Landis & Koch scale), macro-F1 has no standard
+"good/bad" thresholds. It is therefore reported only relative to baselines
+(keyword, TF-IDF) and to chance (~0.17 on six balanced classes), never as an
+absolute score.
