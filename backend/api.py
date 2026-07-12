@@ -14,6 +14,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# below this, or "Other" catgeory, flag for review
+REVIEW_THRESHOLD = 0.6 
+
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...), column: str = "text"):
     raw = await file.read()
@@ -25,7 +28,14 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
     results = []
     for c in comments:
         r = classify_comment(c, themes)
-        results.append({"comment": c, "theme": r["theme"], "sentiment": r["sentiment"]})
+        conf = r.get("confidence", 0.5)
+        results.append({
+            "comment": c,
+            "theme": r["theme"],
+            "sentiment": r["sentiment"],
+            "confidence": conf,
+            "needs_review": conf < REVIEW_THRESHOLD or r["theme"] == "Other",
+        })
 
     # Make zero-count themes visible
     theme_counts = {t: 0 for t in themes}
@@ -40,6 +50,7 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         if len(examples[r["theme"]]) < 2:
             examples[r["theme"]].append(r["comment"])
 
+    review_count = sum(1 for r in results if r["needs_review"])
     return {
         "total": len(results),
         "themes": themes,
@@ -47,4 +58,5 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         "sentiment_counts": dict(sentiment_counts),
         "examples": examples,
         "results": results,
+        "review_count": review_count,
     }

@@ -80,6 +80,7 @@ export default function App() {
             <Metric label="Themes" value={data.themes.length} />
             <Metric label="Positive" value={d.pos + "%"} />
             <Metric label="Negative" value={d.neg + "%"} />
+            <Metric label="For review" value={data.review_count ?? 0} />
           </div>
 
           <div className="grid">
@@ -119,13 +120,16 @@ export default function App() {
           <section className="card">
             <div className="card-head"><span>Comments</span></div>
             <table className="tbl">
-              <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th></tr></thead>
+              <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th></tr></thead>
               <tbody>
                 {data.results.slice(0, 12).map((r, i) => (
-                  <tr key={i}>
+                  <tr key={i} className={r.needs_review ? "row-review" : ""}>
                     <td className="c-comment">{r.comment}</td>
                     <td className="c-theme">{r.theme}</td>
                     <td><span className={`pill ${r.sentiment}`}>{r.sentiment}</span></td>
+                    <td className="c-conf" style={{ color: r.confidence < 0.6 ? "#854F0B" : "#27500A" }}>
+                      {r.confidence?.toFixed(2)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

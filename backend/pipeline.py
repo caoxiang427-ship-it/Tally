@@ -83,7 +83,8 @@ def classify_comment(comment, themes):
         "Assign this comment to exactly ONE theme from the list above "
         "(pick the closest; if truly none fit, use \"Other\"). "
         "Also label sentiment as \"positive\", \"negative\", or \"neutral\". "
-        "Return ONLY JSON like: {\"theme\": \"...\", \"sentiment\": \"...\"}"
+        "Also give your confidence in the theme choice from 0.0 to 1.0. "
+        "Return ONLY JSON like: {\"theme\": \"...\", \"sentiment\": \"...\", \"confidence\": 0.0}"
     )
     resp = client.chat.completions.create(
         model=MODEL,
@@ -92,7 +93,15 @@ def classify_comment(comment, themes):
     )
     text = resp.choices[0].message.content.strip()
     text = text.replace("```json", "").replace("```", "").strip()
-    return json.loads(text)
+    result = json.loads(text)
+
+    # Guard: coerce confidence to a float in [0, 1], default 0.5 if missing or invalid
+    try:
+        c = float(result.get("confidence", 0.5))
+        result["confidence"] = max(0.0, min(1.0, c))
+    except (TypeError, ValueError):
+        result["confidence"] = 0.5
+    return result
 
 def get_themes(comments, fixed_themes=None, n_themes=6):
     """Use a fixed category list if given (for evaluation);
