@@ -1,5 +1,6 @@
 import { useState } from "react";
 import "./App.css";
+import { LayoutGrid, BarChart3, MessageSquareQuote, Upload } from "lucide-react";
 
 const API = "http://127.0.0.1:8000";
 const COLORS = { negative: "#E24B4A", positive: "#639922", neutral: "#B4B2A9" };
@@ -49,13 +50,26 @@ export default function App() {
       </header>
 
       {!data && (
-        <div className="empty">
-          <p className="tagline">GROUP BY for text.</p>
-          <label className="upload">
-            {loading ? "Analyzing…" : "Upload CSV (needs a 'text' column)"}
+        <div className="landing">
+          <h1 className="landing-title">Turn feedback into themes</h1>
+          <p className="landing-sub">Upload open-ended comments — survey responses, reviews, complaints — and get a structured breakdown of what people are saying.</p>
+
+          <label className="dropzone">
+            <div className="dz-icon"><Upload size={22} color="#fff" /></div>
+            <div className="dz-title">{loading ? "Analyzing…" : "Drop a CSV or click to upload"}</div>
+            <div className="dz-hint">Needs a column named 'text'</div>
             <input type="file" accept=".csv" onChange={handleUpload} hidden />
           </label>
           {error && <p className="error">{error}</p>}
+
+          <div className="features">
+            <Feature icon={<LayoutGrid size={20} color="#4f46e5" />}
+              title="Discovers themes" text="Finds the topics automatically — no setup or labels." />
+            <Feature icon={<BarChart3 size={20} color="#4f46e5" />}
+              title="Counts and charts" text="See how often each theme comes up, with sentiment." />
+            <Feature icon={<MessageSquareQuote size={20} color="#4f46e5" />}
+              title="Real examples" text="Every theme backed by actual quotes from the data." />
+          </div>
         </div>
       )}
 
@@ -128,6 +142,14 @@ const Metric = ({ label, value }) => (
 );
 const Leg = ({ c, l }) => (<span className="leg"><span className="dot" style={{ background: c }} />{l}</span>);
 const pct = (part, total) => (total ? (part / total) * 100 + "%" : "0%");
+
+const Feature = ({ icon, title, text }) => (
+  <div className="feature">
+    <div className="feature-icon">{icon}</div>
+    <div className="feature-title">{title}</div>
+    <div className="feature-text">{text}</div>
+  </div>
+);
 
 function derive(data) {
   const sent = { 
