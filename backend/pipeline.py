@@ -13,6 +13,10 @@ def _discover_once(comments, n_themes=6):
     sample = "\n".join(f"- {c}" for c in comments)
     prompt = (
         f"Here are open-ended feedback comments:\n\n{sample}\n\n"
+        "Some comments may contain extra appended fields such as dates, ID "
+        "numbers, or ratings from a malformed file. Ignore those and focus only "
+        "on the human-written feedback. Do NOT create themes about dates, "
+        "numbers, or IDs.\n\n"
         f"Identify the {n_themes} most common recurring themes. "
         "Name each theme as a NEUTRAL TOPIC, not a problem "
         "(e.g. \"Delivery speed\", not \"Delivery issues\"; "
@@ -80,6 +84,8 @@ def classify_comment(comment, themes):
     prompt = (
         f"Themes: [{theme_list}]\n\n"
         f'Comment: "{comment}"\n\n'
+        "The comment may contain extra appended fields such as dates, IDs, or "
+        "ratings from a malformed file; focus only on the human-written feedback. "
         "Assign this comment to exactly ONE theme from the list above "
         "(pick the closest; if truly none fit, use \"Other\"). "
         "Also label sentiment as \"positive\", \"negative\", or \"neutral\". "

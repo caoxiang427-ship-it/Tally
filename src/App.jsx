@@ -23,12 +23,14 @@ export default function App() {
     form.append("file", file);
 
     try {
-      const res = await fetch(`${API}/analyze?column=text`, {
-        method: "POST",
-        body: form,
+      const res = await fetch(`${API}/analyze`, { 
+        method: "POST", 
+        body: form 
       }); // sends POST /analyze with csv to FastAPI backend
       if (!res.ok) throw new Error(`Server error (${res.status})`);
-      setData(await res.json());
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setData(json);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -57,8 +59,8 @@ export default function App() {
           <label className="dropzone">
             <div className="dz-icon"><Upload size={22} color="#fff" /></div>
             <div className="dz-title">{loading ? "Analyzing…" : "Drop a CSV or click to upload"}</div>
-            <div className="dz-hint">Needs a column named 'text'</div>
-            <input type="file" accept=".csv" onChange={handleUpload} hidden />
+            <div className="dz-hint">CSV or Excel — we'll find the comment column</div>
+            <input type="file" accept=".csv,.xlsx" onChange={handleUpload} hidden />
           </label>
           {error && <p className="error">{error}</p>}
 
@@ -75,6 +77,14 @@ export default function App() {
 
       {data && d && (
         <>
+          {data.text_column && (
+            <>
+              <p className="detected">Analyzing column: <b>{data.text_column}</b></p>
+              {data.clean_parse === false && (
+                <p className="warn">Some rows were malformed, so the file was read line-by-line. Every comment was kept, but non-text columns may have been ignored.</p>
+              )}
+            </>
+          )}
           <div className="metrics">
             <Metric label="Comments" value={data.total} />
             <Metric label="Themes" value={data.themes.length} />

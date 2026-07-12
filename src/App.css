@@ -21,15 +21,17 @@
 .btn { font-size: 13px; color: #444; background: #fff; border: 1px solid #d9d9e0; border-radius: 8px; padding: 6px 12px; cursor: pointer; }
 .btn:hover { background: #f6f6f9; }
 
+.detected { font-size: 12px; color: #8a8a99; margin: 0 0 12px; }
+.warn { font-size: 12px; color: #854F0B; background: #FEFCE8; padding: 8px 12px; border-radius: 8px; margin: 0 0 12px; }
 .error { color: #c0392b; margin-top: 14px; }
 
-.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
 .metric { background: #f6f6f9; border-radius: 10px; padding: 14px 16px; }
 .metric-label { font-size: 12px; color: #8a8a99; }
 .metric-value { font-size: 24px; font-weight: 600; margin-top: 2px; }
 
 .grid { display: grid; grid-template-columns: 1.55fr 1fr; gap: 12px; margin-bottom: 12px; }
-.card { background: #fff; border: 1px solid #ececf0; border-radius: 12px; padding: 16px 18px; }
+.card { background: #fff; border: 1px solid #ececf0; border-radius: 12px; padding: 16px 18px; overflow: hidden; }
 .card-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 600; margin-bottom: 14px; }
 .muted { font-size: 11px; color: #b0b0bb; font-weight: 400; }
 
@@ -50,7 +52,8 @@
 
 .tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .tbl th { font-size: 11px; color: #b0b0bb; font-weight: 400; text-align: left; padding-bottom: 8px; }
-.tbl th:nth-child(1) { width: 54%; } .tbl th:nth-child(2) { width: 30%; } .tbl th:nth-child(3) { width: 16%; }
+.tbl th:nth-child(1) { width: 44%; } .tbl th:nth-child(2) { width: 26%; }
+.tbl th:nth-child(3) { width: 18%; } .tbl th:nth-child(4) { width: 12%; }
 .tbl td { font-size: 13px; padding: 9px 8px 9px 0; border-top: 1px solid #f0f0f4; }
 .c-comment { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-theme { color: #6a6a77; }
@@ -58,10 +61,8 @@
 .pill.negative { background: #FCEBEB; color: #791F1F; }
 .pill.positive { background: #EAF3DE; color: #27500A; }
 .pill.neutral { background: #F1EFE8; color: #444441; }
+.c-conf-h { text-align: right; padding-right: 4px; }
+.c-conf { text-align: right; padding-right: 4px; font-variant-numeric: tabular-nums; }
+.row-review { background: #FEFCE8; }
 
-.feature-icon {
-  width: 40px; height: 40px; border-radius: 10px;
-  background: #eef0fe;
-  display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 10px;
-}
+.feature-icon { width: 40px; height: 40px; border-radius: 10px; background: #eef0fe; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; }

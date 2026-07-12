@@ -14,14 +14,77 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# below this, or "Other" catgeory, flag for review
+# below this, or "Other" category, flag for review
 REVIEW_THRESHOLD = 0.6 
+
+def pick_text_column(df):
+    """Pick the most likely text column from a dataframe."""
+    # 1. Prefer columns with common comment-like names
+    preferred = ["text", "comment", "comments", "feedback", "review",
+                "response", "narrative", "message", "answer"]
+    lower = {c.lower(): c for c in df.columns}
+
+    for name in preferred:
+        if name in lower:
+            return lower[name]
+
+    # 2. Otherwise, pick the column with the longest average text
+    text_cols = df.select_dtypes(include="object").columns # give all cols that contain text, not numbers
+    
+    if len(text_cols) == 0:
+        raise ValueError("No text columns found in CSV.")
+   
+    avg_lengths = {c: df[c].dropna().astype(str).str.len().mean() for c in text_cols}
+    return max(avg_lengths, key=avg_lengths.get)
+
+
+def read_csv_robust(raw):
+    """Try multiple strategies to read a messy CSV/Excel file"""
+    import io
+
+    # Layer 1: Standard CSV (handles properly quoted commas)
+    try:
+        return pd.read_csv(io.BytesIO(raw)), True
+    except Exception:
+        pass
+
+    # Layer 1b: auto-detect tab, semicolon, pipe...
+    try:
+        return pd.read_csv(io.BytesIO(raw), sep=None, engine="python"), True
+    except Exception:
+        pass
+
+    # Layer 1c: Excel
+    try:
+        return pd.read_excel(io.BytesIO(raw)), True
+    except Exception:
+        pass
+
+    # Layer 2: one comment per line
+    text = raw.decode("utf-8", errors="ignore")
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    
+    if lines and len(lines[0]) < 40 and " " not in lines[0]:
+        lines = lines[1:]   # drop a header-looking first line
+    
+    return pd.DataFrame({"text": lines}), False
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...), column: str = "text"):
     raw = await file.read()
-    dataframe = pd.read_csv(io.BytesIO(raw))
-    comments = dataframe[column].dropna().astype(str).tolist()
+
+    dataframe, parsed_cleanly = read_csv_robust(raw)
+    if dataframe is None or len(dataframe) == 0:
+        return {"error": "Could not read this file. Please upload a CSV or Excel file."}
+    
+    # Pick the text column: use the one requested, else auto-detect 
+    # Check if the user actually provided column name & if that column actually exists in CSV
+    try:
+        text_col = pick_text_column(dataframe) if not (column and column in dataframe.columns) else column
+    except ValueError as e:
+        return {"error": str(e)}
+
+    comments = dataframe[text_col].dropna().astype(str).tolist()
 
     themes = discover_themes(comments)
 
@@ -53,6 +116,8 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
     review_count = sum(1 for r in results if r["needs_review"])
     return {
         "total": len(results),
+        "text_column": text_col,
+        "clean_parse": parsed_cleanly,
         "themes": themes,
         "theme_counts": dict(theme_counts),
         "sentiment_counts": dict(sentiment_counts),
