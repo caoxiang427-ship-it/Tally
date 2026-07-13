@@ -6,6 +6,7 @@ from collections import Counter
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pipeline import discover_themes, classify_comment
+from concurrent.futures import ThreadPoolExecutor
 
 app = FastAPI()
 
@@ -91,19 +92,26 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
 
     comments = dataframe[text_col].dropna().astype(str).tolist()
 
-    themes = discover_themes(comments)
+    if len(comments) == 0:
+        return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
 
-    results = []
-    for c in comments:
+    n = max(2, min(6, len(comments) // 3)) # scale theme count to data size
+    themes = discover_themes(comments, n_themes=n)
+
+    def classify_one(c):
         r = classify_comment(c, themes)
         conf = r.get("confidence", 0.5)
-        results.append({
+        return {
             "comment": c,
             "theme": r["theme"],
             "sentiment": r["sentiment"],
             "confidence": conf,
             "needs_review": conf < REVIEW_THRESHOLD or r["theme"] == "Other",
-        })
+        }
+
+    # Run up to 10 classifications concurrently, preserving input order
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(classify_one, comments))
 
     # Make zero-count themes visible
     theme_counts = {t: 0 for t in themes}
@@ -146,9 +154,14 @@ async def analyze_stream(file: UploadFile = File(...), column: str = None):
 
     comments = dataframe[text_col].dropna().astype(str).tolist()
 
+    if len(comments) == 0:
+        return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
+
     def event_stream():
         # 1. Discover themes (once)
-        themes = discover_themes(comments)
+        n = max(2, min(6, len(comments) // 3)) # scale theme count to data size
+        themes = discover_themes(comments, n_themes=n)
+
         yield sse({"type": "themes", "themes": themes,
                    "total": len(comments), "text_column": text_col,
                    "clean_parse": parsed_cleanly})

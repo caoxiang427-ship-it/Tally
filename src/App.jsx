@@ -27,6 +27,18 @@ export default function App() {
       const res = await fetch(`${API}/analyze_stream`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`Server error (${res.status})`);
 
+      // If the backend returned a plain JSON error (not a stream), handle it
+      const ctype = res.headers.get("content-type") || "";
+      if (ctype.includes("application/json")) {
+        const j = await res.json();
+        if (j.error) {
+          setError(j.error);
+          setLoading(false);
+          return;
+        }
+      }
+    
+      // otherwise, proceed with the streaming reader
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
