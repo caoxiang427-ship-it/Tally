@@ -68,6 +68,9 @@ def read_csv_robust(raw):
     
     if lines and len(lines[0]) < 40 and " " not in lines[0]:
         lines = lines[1:]   # drop a header-looking first line
+
+    import re
+    lines = [re.sub(r'^(\s*\d+\s*,\s*)+', '', l) for l in lines]
     
     return pd.DataFrame({"text": lines}), False
 
