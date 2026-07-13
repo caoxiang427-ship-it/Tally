@@ -9,6 +9,7 @@ export default function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState(null);
 
   async function handleUpload(e) {
     const file = e.target.files[0];
@@ -23,21 +24,45 @@ export default function App() {
     form.append("file", file);
 
     try {
-      const res = await fetch(`${API}/analyze`, { 
-        method: "POST", 
-        body: form 
-      }); // sends POST /analyze with csv to FastAPI backend
+      const res = await fetch(`${API}/analyze_stream`, { method: "POST", body: form });
       if (!res.ok) throw new Error(`Server error (${res.status})`);
-      const json = await res.json();
-      if (json.error) throw new Error(json.error);
-      setData(json);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE messages are separated by a blank line
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();  // keep the incomplete tail
+
+        for (const part of parts) {
+          const line = part.replace(/^data: /, "").trim();
+          if (!line) continue;
+          const msg = JSON.parse(line);
+
+          if (msg.error) throw new Error(msg.error);
+
+          if (msg.type === "themes") {
+            setProgress({ done: 0, total: msg.total });
+          } else if (msg.type === "progress") {
+            setProgress({ done: msg.done, total: msg.total });
+          } else if (msg.type === "done") {
+            setData(msg);
+          }
+        }
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
-
   const d = data ? derive(data) : null;
 
   return (
@@ -58,10 +83,21 @@ export default function App() {
 
           <label className="dropzone">
             <div className="dz-icon"><Upload size={22} color="#fff" /></div>
-            <div className="dz-title">{loading ? "Analyzing…" : "Drop a CSV or click to upload"}</div>
+            <div className="dz-title">
+              {loading
+                ? (progress ? `Analyzing ${progress.done} / ${progress.total}…` : "Reading file…")
+                : "Drop a CSV or click to upload"}
+            </div>
             <div className="dz-hint">CSV or Excel — we'll find the comment column</div>
             <input type="file" accept=".csv,.xlsx" onChange={handleUpload} hidden />
           </label>
+
+          {loading && progress && progress.total > 0 && (
+            <div className="progress">
+              <div className="progress-fill" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+            </div>
+          )}
+          
           {error && <p className="error">{error}</p>}
 
           <div className="features">

@@ -66,3 +66,6 @@
 .row-review { background: #FEFCE8; }
 
 .feature-icon { width: 40px; height: 40px; border-radius: 10px; background: #eef0fe; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px; }
+
+.progress { height: 6px; background: #ececf2; border-radius: 3px; margin-top: 16px; overflow: hidden; }
+.progress-fill { height: 100%; background: #4f46e5; transition: width 0.2s ease; }

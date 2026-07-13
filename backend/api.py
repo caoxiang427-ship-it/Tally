@@ -1,5 +1,7 @@
 import io
 import pandas as pd
+import json
+from fastapi.responses import StreamingResponse
 from collections import Counter
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -125,3 +127,64 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         "results": results,
         "review_count": review_count,
     }
+
+@app.post("/analyze_stream")
+async def analyze_stream(file: UploadFile = File(...), column: str = None):
+    raw = await file.read()
+
+    dataframe, parsed_cleanly = read_csv_robust(raw)
+    if dataframe is None or len(dataframe) == 0:
+        return {"error": "Could not read this file. Please upload a CSV or Excel file."}
+
+    try:
+        text_col = pick_text_column(dataframe) if not (column and column in dataframe.columns) else column
+    except ValueError as e:
+        return {"error": str(e)}
+
+    comments = dataframe[text_col].dropna().astype(str).tolist()
+
+    def event_stream():
+        # 1. Discover themes (once)
+        themes = discover_themes(comments)
+        yield sse({"type": "themes", "themes": themes,
+                   "total": len(comments), "text_column": text_col,
+                   "clean_parse": parsed_cleanly})
+
+        # 2. Classify each comment & stream progress updates
+        results = []
+        for i, c in enumerate(comments):
+            r = classify_comment(c, themes)
+            conf = r.get("confidence", 0.5)
+            row = {
+                "comment": c,
+                "theme": r["theme"],
+                "sentiment": r["sentiment"],
+                "confidence": conf,
+                "needs_review": conf < REVIEW_THRESHOLD or r["theme"] == "Other",
+            }
+            results.append(row)
+            yield sse({"type": "progress", "done": i + 1, "total": len(comments), "row": row})
+
+        # 3. Final aggregates
+        theme_counts = {t: 0 for t in themes}
+        for r in results:
+            theme_counts[r["theme"]] = theme_counts.get(r["theme"], 0) + 1
+        sentiment_counts = dict(Counter(r["sentiment"] for r in results))
+        review_count = sum(1 for r in results if r["needs_review"])
+
+        yield sse({"type": "done",
+                   "total": len(results),
+                   "text_column": text_col,
+                   "clean_parse": parsed_cleanly,
+                   "themes": themes,
+                   "theme_counts": theme_counts,
+                   "sentiment_counts": sentiment_counts,
+                   "results": results,
+                   "review_count": review_count})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def sse(obj):
+    """Format a dict as one Server-Sent Event line."""
+    return f"data: {json.dumps(obj)}\n\n"
