@@ -316,18 +316,21 @@ function derive(data) {
 
 // For user to export the results as a CSV file
 function exportCSV(results) {
-  const rows = results.map((r) => 
-    `"${(r.comment || "").replace(/"/g, '""')}","${r.theme}","${r.sentiment}"`
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;  // quote-safe
+  const header = "comment,primary_theme,secondary_themes,sentiment,confidence";
+  const rows = results.map((r) =>
+    [
+      esc(r.comment),
+      esc(r.theme),
+      esc((r.secondary_themes || []).join("; ")),  
+      esc(r.sentiment),
+      esc(r.confidence?.toFixed(2) ?? ""),
+    ].join(",")
   );
-
-  const blob = new Blob(
-    ["comment,theme,sentiment\n" + rows.join("\n")], 
-    { type: "text/csv" }
-  );
-
-  const a = document.createElement("a"); // create a download link
-  a.href = URL.createObjectURL(blob); // connect the link to the file (blob)
-  a.download = "tally_results.csv"; // set the filename
+  const blob = new Blob([header + "\n" + rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "tally_results.csv";
   a.click();
 }
 
