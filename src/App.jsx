@@ -10,6 +10,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState(null);
+  const [view, setView] = useState("primary"); // "primary" or "mentions"
 
   async function handleUpload(e) {
     const file = e.target.files[0];
@@ -171,20 +172,50 @@ export default function App() {
 
           <div className="grid">
             <section className="card">
-              <div className="card-head"><span>Themes by sentiment</span><span className="muted">count</span></div>
-              {d.rows.map((t) => (
-                <div className="bar-row" key={t.theme}>
-                  <div className="bar-label"><span>{t.theme}</span><span>{t.total}</span></div>
-                  <div className="bar">
-                    <span style={{ width: pct(t.negative, t.total), background: COLORS.negative }} />
-                    <span style={{ width: pct(t.positive, t.total), background: COLORS.positive }} />
-                    <span style={{ width: pct(t.neutral, t.total), background: COLORS.neutral }} />
-                  </div>
+              <div className="card-head">
+                <span>Themes {view === "primary" ? "by sentiment" : "by mentions"}</span>
+                <div className="toggle">
+                  <button className={view === "primary" ? "on" : ""} onClick={() => setView("primary")}>Primary</button>
+                  <button className={view === "mentions" ? "on" : ""} onClick={() => setView("mentions")}>Mentions</button>
                 </div>
-              ))}
-              <div className="legend">
-                <Leg c={COLORS.negative} l="Negative" /><Leg c={COLORS.positive} l="Positive" /><Leg c={COLORS.neutral} l="Neutral" />
               </div>
+
+              {view === "primary" ? (
+                // existing sentiment-stacked bars, driven by d.primaryRows
+                d.primaryRows.map((t) => {
+                  const s = sentimentSplit(data.results, t.theme);
+                  return (
+                    <div className="bar-row" key={t.theme}>
+                      <div className="bar-label"><span>{t.theme}</span><span>{t.count}</span></div>
+                      <div className="bar">
+                        <span style={{ width: pct(s.negative, t.count), background: COLORS.negative }} />
+                        <span style={{ width: pct(s.positive, t.count), background: COLORS.positive }} />
+                        <span style={{ width: pct(s.neutral, t.count), background: COLORS.neutral }} />
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                // mentions: plain single-color bars
+                d.mentionRows.map((t) => {
+                  const max = d.mentionRows[0]?.count || 1;
+                  return (
+                    <div className="bar-row" key={t.theme}>
+                      <div className="bar-label"><span>{t.theme}</span><span>{t.count}</span></div>
+                      <div className="bar"><span style={{ width: `${(t.count / max) * 100}%`, background: "#4f46e5" }} /></div>
+                    </div>
+                  );
+                })
+              )}
+
+              {view === "primary" && (
+                <div className="legend">
+                  <Leg c={COLORS.negative} l="Negative" /><Leg c={COLORS.positive} l="Positive" /><Leg c={COLORS.neutral} l="Neutral" />
+                </div>
+              )}
+              {view === "mentions" && (
+                <p className="illustrative">Counts each theme a comment mentions, so the total exceeds the number of comments.</p>
+              )}
             </section>
 
             <section className="card">
@@ -262,12 +293,24 @@ function derive(data) {
     map[r.theme][r.sentiment] = (map[r.theme][r.sentiment] || 0) + 1;
     map[r.theme].total += 1;
   });
+
+  const primaryRows = Object.entries(data.theme_counts)
+    .map(([theme, count]) => ({ theme, count }))
+    .filter(t => t.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const mentionRows = Object.entries(data.mention_counts || {})
+    .map(([theme, count]) => ({ theme, count }))
+    .filter(t => t.count > 0)
+    .sort((a, b) => b.count - a.count);
+
   return {
     sent,
     pos: Math.round((sent.positive / totalSent) * 100),
     neg: Math.round((sent.negative / totalSent) * 100),
     neu: Math.round((sent.neutral / totalSent) * 100),
-    rows: Object.values(map).sort((a, b) => b.total - a.total),
+    primaryRows,
+    mentionRows,
   };
 }
 
@@ -288,3 +331,12 @@ function exportCSV(results) {
   a.click();
 }
 
+function sentimentSplit(results, theme) {
+  const s = { negative: 0, positive: 0, neutral: 0 };
+  results.forEach((r) => {
+    if (r.theme === theme) {
+      s[r.sentiment] = (s[r.sentiment] || 0) + 1;
+    }
+  });
+  return s;
+}

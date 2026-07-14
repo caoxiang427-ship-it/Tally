@@ -79,18 +79,21 @@ def discover_themes(comments, n_themes=6, n_samples=3, sample_size=150, seed=42)
     return json.loads(text)
 
 def classify_comment(comment, themes):
-    """Pass 2: assign one comment to a theme from the fixed list + sentiment."""
+    """Pass 2: assign a primary theme (+ optional secondary themes), sentiment, confidence."""
     theme_list = ", ".join(f'"{t}"' for t in themes)
     prompt = (
         f"Themes: [{theme_list}]\n\n"
         f'Comment: "{comment}"\n\n'
         "The comment may contain extra appended fields such as dates, IDs, or "
         "ratings from a malformed file; focus only on the human-written feedback. "
-        "Assign this comment to exactly ONE theme from the list above "
+        "Assign the single BEST-fitting theme as \"primary_theme\" "
         "(pick the closest; if truly none fit, use \"Other\"). "
+        "If the comment clearly raises other distinct themes from the list, list them "
+        "in \"secondary_themes\" (max 2); otherwise use an empty array. "
         "Also label sentiment as \"positive\", \"negative\", or \"neutral\". "
-        "Also give your confidence in the theme choice from 0.0 to 1.0. "
-        "Return ONLY JSON like: {\"theme\": \"...\", \"sentiment\": \"...\", \"confidence\": 0.0}"
+        "Also give your confidence in the primary theme from 0.0 to 1.0. "
+        "Return ONLY JSON like: {\"primary_theme\": \"...\", "
+        "\"secondary_themes\": [\"...\"], \"sentiment\": \"...\", \"confidence\": 0.0}"
     )
     resp = client.chat.completions.create(
         model=MODEL,
@@ -107,6 +110,10 @@ def classify_comment(comment, themes):
         result["confidence"] = max(0.0, min(1.0, c))
     except (TypeError, ValueError):
         result["confidence"] = 0.5
+    sec = result.get("secondary_themes") or []
+    if isinstance(sec, str):
+        sec = [sec]
+    result["secondary_themes"] = [s for s in sec if s != result.get("primary_theme")][:2]
     return result
 
 def get_themes(comments, fixed_themes=None, n_themes=6):

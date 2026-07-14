@@ -101,22 +101,30 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
     def classify_one(c):
         r = classify_comment(c, themes)
         conf = r.get("confidence", 0.5)
+        primary = r.get("primary_theme", r.get("theme", "Other"))
         return {
             "comment": c,
-            "theme": r["theme"],
+            "theme": primary,
+            "secondary_themes": r.get("secondary_themes", []),
             "sentiment": r["sentiment"],
             "confidence": conf,
-            "needs_review": conf < REVIEW_THRESHOLD or r["theme"] == "Other",
+            "needs_review": conf < REVIEW_THRESHOLD or primary == "Other",
         }
 
     # Run up to 10 classifications concurrently, preserving input order
     with ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(classify_one, comments))
 
-    # Make zero-count themes visible
+    # Primary counts (each comment counts once), drives the chart, sums to N
     theme_counts = {t: 0 for t in themes}
     for r in results:
         theme_counts[r["theme"]] = theme_counts.get(r["theme"], 0) + 1
+    
+    # Mention counts (primary + secondary), counts each mention, sums to > N
+    mention_counts = {t: 0 for t in themes}
+    for r in results:
+        for t in [r["theme"]] + r.get("secondary_themes", []):
+            mention_counts[t] = mention_counts.get(t, 0) + 1
 
     sentiment_counts = Counter(r["sentiment"] for r in results)
 
@@ -133,6 +141,7 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         "clean_parse": parsed_cleanly,
         "themes": themes,
         "theme_counts": dict(theme_counts),
+        "mention_counts": dict(mention_counts),
         "sentiment_counts": dict(sentiment_counts),
         "examples": examples,
         "results": results,
