@@ -13,6 +13,33 @@ export default function App() {
 
   async function handleUpload(e) {
     const file = e.target.files[0];
+
+    if (!file) return;
+
+    setLoading(true); setError(""); setData(null); setProgress(null);
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch(`${API}/analyze`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      const json = await res.json();
+      if (json.error) {
+        setError(json.error);
+        return;
+      }
+      setData(json);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  /*
+  async function handleUpload(e) {
+    const file = e.target.files[0];
     
     if (!file) return;
 
@@ -75,6 +102,8 @@ export default function App() {
       setProgress(null);
     }
   }
+  */
+
   const d = data ? derive(data) : null;
 
   return (
@@ -96,17 +125,16 @@ export default function App() {
           <label className="dropzone">
             <div className="dz-icon"><Upload size={22} color="#fff" /></div>
             <div className="dz-title">
-              {loading
-                ? (progress ? `Analyzing ${progress.done} / ${progress.total}…` : "Reading file…")
-                : "Drop a CSV or click to upload"}
+              {loading ? "Analyzing your comments…" : "Drop a CSV or click to upload"}
             </div>
             <div className="dz-hint">CSV or Excel — we'll find the comment column</div>
             <input type="file" accept=".csv,.xlsx" onChange={handleUpload} hidden />
           </label>
 
-          {loading && progress && progress.total > 0 && (
-            <div className="progress">
-              <div className="progress-fill" style={{ width: `${(progress.done / progress.total) * 100}%` }} />
+          {loading && (
+            <div className="loading-box">
+              <div className="spinner" />
+              <p>Classifying each comment — this takes a few seconds per hundred.</p>
             </div>
           )}
           
