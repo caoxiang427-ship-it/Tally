@@ -4,20 +4,30 @@ import { LayoutGrid, BarChart3, MessageSquareQuote, Upload } from "lucide-react"
 
 const API = "http://127.0.0.1:8000";
 const COLORS = { negative: "#E24B4A", positive: "#639922", neutral: "#B4B2A9" };
+const EXCLUDED = "__excluded__";
 
 export default function App() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [progress, setProgress] = useState(null);
+  // const [progress, setProgress] = useState(null);
   const [view, setView] = useState("primary"); // "primary" or "mentions"
+  const [corrections, setCorrections] = useState({});
+
+  // Get the effective theme
+  // If user has corrected then theme, use it; otherwise, use original one
+  const themeOf = (r, i) => corrections[i] ?? r.theme;
 
   async function handleUpload(e) {
     const file = e.target.files[0];
 
     if (!file) return;
 
-    setLoading(true); setError(""); setData(null); setProgress(null);
+    setLoading(true); 
+    setError(""); 
+    setData(null); 
+    setCorrections({});
+    // setProgress(null);
 
     const form = new FormData();
     form.append("file", file);
@@ -105,7 +115,7 @@ export default function App() {
   }
   */
 
-  const d = data ? derive(data) : null;
+  const d = data ? derive(data, corrections) : null;
 
   return (
     <div className="app">
@@ -115,7 +125,7 @@ export default function App() {
           <span className="brand-name">Tally</span>
           {data && <span className="chip">{data.total} rows</span>}
         </div>
-        {data && <button className="btn" onClick={() => exportCSV(data.results)}>Export CSV</button>}
+        {data && <button className="btn" onClick={() => exportCSV(data.results, corrections)}>Export CSV</button>}
       </header>
 
       {!data && (
@@ -163,12 +173,16 @@ export default function App() {
             </>
           )}
           <div className="metrics">
-            <Metric label="Comments" value={data.total} />
+            <Metric label="Comments" value={d.included} />
             <Metric label="Themes" value={data.themes.length} />
             <Metric label="Positive" value={d.pos + "%"} />
             <Metric label="Negative" value={d.neg + "%"} />
             <Metric label="For review" value={data.review_count ?? 0} />
           </div>
+
+          {d.excludedCount > 0 && (
+            <p className="detected">{d.excludedCount} comment(s) excluded from counts as not feedback.</p>
+          )}
 
           <div className="grid">
             <section className="card">
@@ -183,7 +197,7 @@ export default function App() {
               {view === "primary" ? (
                 // existing sentiment-stacked bars, driven by d.primaryRows
                 d.primaryRows.map((t) => {
-                  const s = sentimentSplit(data.results, t.theme);
+                  const s = sentimentSplit(data.results, t.theme, corrections);
                   return (
                     <div className="bar-row" key={t.theme}>
                       <div className="bar-label"><span>{t.theme}</span><span>{t.count}</span></div>
@@ -234,6 +248,46 @@ export default function App() {
             </section>
           </div>
 
+          {data.results.some(r => r.needs_review) && (
+            <section className="card review-card">
+              <div className="card-head">
+                <span>Needs review</span>
+                <span className="muted">
+                  {data.results.filter(r => r.needs_review).length} low-confidence or unmatched
+                </span>
+              </div>
+              <p className="review-note">
+                These comments were classified with low confidence, or matched no theme. Correct the
+                theme if needed — changes update the charts and the exported CSV.
+              </p>
+              {data.results.map((r, i) =>
+                r.needs_review ? (
+
+                  <div className={`review-row ${corrections[i] === EXCLUDED ? "is-excluded" : ""}`} key={i}>
+                    <div className="review-comment">{r.comment}</div>
+                    <div className="review-controls">
+                      <span className="conf-badge">
+                        {r.theme === "Other" ? "no theme matched" : `low conf ${r.confidence?.toFixed(2)}`}
+                      </span>
+                      <select
+                        value={corrections[i] ?? r.theme}
+                        onChange={(e) => setCorrections({ ...corrections, [i]: e.target.value })}
+                      >
+                        {[...data.themes, "Other"].map(t => <option key={t} value={t}>{t}</option>)}
+                        <option value={EXCLUDED}>— Exclude (not feedback)</option>
+                      </select>
+                      {corrections[i] === EXCLUDED && <span className="excluded-tag">excluded</span>}
+                      {corrections[i] && corrections[i] !== EXCLUDED && corrections[i] !== r.theme && (
+                        <span className="corrected-tag">corrected</span>
+                      )}
+                    </div>
+                  </div>
+
+                ) : null
+              )}
+            </section>
+          )}
+         
           <section className="card">
             <div className="card-head"><span>Comments</span></div>
             <table className="tbl">
@@ -242,7 +296,7 @@ export default function App() {
                 {data.results.slice(0, 12).map((r, i) => (
                   <tr key={i} className={r.needs_review ? "row-review" : ""}>
                     <td className="c-comment">{r.comment}</td>
-                    <td className="c-theme">{r.theme}</td>
+                    <td className="c-theme">{themeOf(r, i)}</td>
                     <td><span className={`pill ${r.sentiment}`}>{r.sentiment}</span></td>
                     <td className="c-conf" style={{ color: r.confidence < 0.6 ? "#854F0B" : "#27500A" }}>
                       {r.confidence?.toFixed(2)}
@@ -272,61 +326,76 @@ const Feature = ({ icon, title, text }) => (
   </div>
 );
 
-function derive(data) {
+function derive(data, corrections) {
+  const isEx = (i) => corrections[i] === EXCLUDED;
+
   const sent = { 
     negative: 0, 
     positive: 0, 
-    neutral: 0, 
-    ...data.sentiment_counts
+    neutral: 0
   };
+  data.results.forEach((r, i) => {
+    if (isEx(i)) return;
+    sent[r.sentiment] = (sent[r.sentiment] || 0) + 1;
+  });
   const totalSent = (sent.negative + sent.positive + sent.neutral) || 1;
   
-  const map = {};
-  // counter for every theme
-  data.themes.forEach((t) => (
-    map[t] = { theme: t, negative: 0, positive: 0, neutral: 0, total: 0 }));
-
-  data.results.forEach((r) => {
-    if (!map[r.theme]) {
-      map[r.theme] = { theme: r.theme, negative: 0, positive: 0, neutral: 0, total: 0 };
-    };
-    map[r.theme][r.sentiment] = (map[r.theme][r.sentiment] || 0) + 1;
-    map[r.theme].total += 1;
+  // Recount primary themes using corrections
+  const primary = {};
+  data.themes.forEach(t => (primary[t] = 0));
+  data.results.forEach((r, i) => {
+    if (isEx(i)) return;
+    const t = corrections[i] ?? r.theme;
+    primary[t] = (primary[t] || 0) + 1;
   });
 
-  const primaryRows = Object.entries(data.theme_counts)
+  // Recount mentions using corrections
+  const mention = {};
+  data.themes.forEach(t => (mention[t] = 0));
+  data.results.forEach((r, i) => {
+    if (isEx(i)) return;
+    const t = corrections[i] ?? r.theme;
+    [t, ...(r.secondary_themes || [])]
+      .forEach(x => (
+        mention[x] = (mention[x] || 0) + 1));
+      });
+
+  const toRows = (obj) => Object.entries(obj)
     .map(([theme, count]) => ({ theme, count }))
     .filter(t => t.count > 0)
     .sort((a, b) => b.count - a.count);
 
-  const mentionRows = Object.entries(data.mention_counts || {})
-    .map(([theme, count]) => ({ theme, count }))
-    .filter(t => t.count > 0)
-    .sort((a, b) => b.count - a.count);
+  const excludedCount = data.results.filter((_, i) => isEx(i)).length;
 
   return {
     sent,
-    pos: Math.round((sent.positive / totalSent) * 100),
-    neg: Math.round((sent.negative / totalSent) * 100),
-    neu: Math.round((sent.neutral / totalSent) * 100),
-    primaryRows,
-    mentionRows,
+    included: data.results.length - excludedCount,
+    excludedCount,
+    pos: Math.round(sent.positive / totalSent * 100),
+    neg: Math.round(sent.negative / totalSent * 100),
+    neu: Math.round(sent.neutral / totalSent * 100),
+    primaryRows: toRows(primary),
+    mentionRows: toRows(mention),
   };
 }
 
 // For user to export the results as a CSV file
-function exportCSV(results) {
-  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;  // quote-safe
-  const header = "comment,primary_theme,secondary_themes,sentiment,confidence";
-  const rows = results.map((r) =>
-    [
+function exportCSV(results, corrections) {
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const header = "comment,primary_theme,secondary_themes,sentiment,confidence,status";
+  const rows = results.map((r, i) => {
+    const c = corrections[i];
+    const excluded = c === EXCLUDED;
+    const corrected = c && !excluded && c !== r.theme;
+    return [
       esc(r.comment),
-      esc(r.theme),
-      esc((r.secondary_themes || []).join("; ")),  
+      esc(excluded ? "" : (c ?? r.theme)),
+      esc(excluded ? "" : (r.secondary_themes || []).join("; ")),
       esc(r.sentiment),
       esc(r.confidence?.toFixed(2) ?? ""),
-    ].join(",")
-  );
+      esc(excluded ? "excluded" : corrected ? "human_corrected" : "model"),
+    ].join(",");
+  });
   const blob = new Blob([header + "\n" + rows.join("\n")], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -334,12 +403,12 @@ function exportCSV(results) {
   a.click();
 }
 
-function sentimentSplit(results, theme) {
+function sentimentSplit(results, theme, corrections) {
   const s = { negative: 0, positive: 0, neutral: 0 };
-  results.forEach((r) => {
-    if (r.theme === theme) {
-      s[r.sentiment] = (s[r.sentiment] || 0) + 1;
-    }
+  results.forEach((r, i) => {
+    if (corrections[i] === EXCLUDED) return;
+    const t = corrections[i] ?? r.theme;
+    if (t === theme) s[r.sentiment] = (s[r.sentiment] || 0) + 1;
   });
   return s;
 }

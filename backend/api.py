@@ -95,7 +95,7 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
     if len(comments) == 0:
         return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
 
-    n = max(2, min(6, len(comments) // 3)) # scale theme count to data size
+    n = max(3, min(6, len(comments) // 2)) # scale theme count to data size
     themes = discover_themes(comments, n_themes=n)
 
     def classify_one(c):
