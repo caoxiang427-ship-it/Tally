@@ -13,6 +13,10 @@ export default function App() {
   // const [progress, setProgress] = useState(null);
   const [view, setView] = useState("primary"); // "primary" or "mentions"
   const [corrections, setCorrections] = useState({});
+  const [filterTheme, setFilterTheme] = useState(null);
+  const [filterSentiment, setFilterSentiment] = useState(null);
+  const [reviewOnly, setReviewOnly] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(20); // show 20 rows
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -27,6 +31,10 @@ export default function App() {
     setError(""); 
     setData(null); 
     setCorrections({});
+    setFilterTheme(null);
+    setFilterSentiment(null);
+    setReviewOnly(false);
+    setVisibleCount(20);
     // setProgress(null);
 
     const form = new FormData();
@@ -117,6 +125,29 @@ export default function App() {
 
   const d = data ? derive(data, corrections) : null;
 
+  const filtered = data
+    ? data.results
+        .map((r, i) => ({ r, i }))
+        .filter(({ r, i }) => {
+          if (corrections [i] === EXCLUDED) {
+            return false;
+          }
+          const theme = corrections[i] ?? r.theme;
+          if (filterTheme && theme !== filterTheme) {
+            return false;
+          }
+          if (filterSentiment && r.sentiment !== filterSentiment) {
+            return false;
+          }
+          if (reviewOnly && !r.needs_review) {
+            return false;
+          }
+          return true;
+        })
+    : [];
+  
+  const anyFilter = filterTheme || filterSentiment || reviewOnly;
+
   return (
     <div className="app">
       <header className="topbar">
@@ -195,11 +226,14 @@ export default function App() {
               </div>
 
               {view === "primary" ? (
-                // existing sentiment-stacked bars, driven by d.primaryRows
                 d.primaryRows.map((t) => {
                   const s = sentimentSplit(data.results, t.theme, corrections);
                   return (
-                    <div className="bar-row" key={t.theme}>
+                    <div
+                      className={`bar-row clickable ${filterTheme === t.theme ? "active" : ""}`}
+                      key={t.theme}
+                      onClick={() => { setFilterTheme(filterTheme === t.theme ? null : t.theme); setVisibleCount(20); }}
+                    >
                       <div className="bar-label"><span>{t.theme}</span><span>{t.count}</span></div>
                       <div className="bar">
                         <span style={{ width: pct(s.negative, t.count), background: COLORS.negative }} />
@@ -210,13 +244,18 @@ export default function App() {
                   );
                 })
               ) : (
-                // mentions: plain single-color bars
                 d.mentionRows.map((t) => {
                   const max = d.mentionRows[0]?.count || 1;
                   return (
-                    <div className="bar-row" key={t.theme}>
+                    <div
+                      className={`bar-row clickable ${filterTheme === t.theme ? "active" : ""}`}
+                      key={t.theme}
+                      onClick={() => { setFilterTheme(filterTheme === t.theme ? null : t.theme); setVisibleCount(20); }}
+                    >
                       <div className="bar-label"><span>{t.theme}</span><span>{t.count}</span></div>
-                      <div className="bar"><span style={{ width: `${(t.count / max) * 100}%`, background: "#4f46e5" }} /></div>
+                      <div className="bar">
+                        <span style={{ width: `${(t.count / max) * 100}%`, background: "#4f46e5" }} />
+                      </div>
                     </div>
                   );
                 })
@@ -253,7 +292,7 @@ export default function App() {
               <div className="card-head">
                 <span>Needs review</span>
                 <span className="muted">
-                  {data.results.filter(r => r.needs_review).length} low-confidence or unmatched
+                  {data.results.filter((r, i) => r.needs_review && corrections[i] !== EXCLUDED).length} low-confidence or unmatched
                 </span>
               </div>
               <p className="review-note">
@@ -287,24 +326,78 @@ export default function App() {
               )}
             </section>
           )}
-         
           <section className="card">
-            <div className="card-head"><span>Comments</span></div>
-            <table className="tbl">
-              <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th></tr></thead>
-              <tbody>
-                {data.results.slice(0, 12).map((r, i) => (
-                  <tr key={i} className={r.needs_review ? "row-review" : ""}>
-                    <td className="c-comment">{r.comment}</td>
-                    <td className="c-theme">{themeOf(r, i)}</td>
-                    <td><span className={`pill ${r.sentiment}`}>{r.sentiment}</span></td>
-                    <td className="c-conf" style={{ color: r.confidence < 0.6 ? "#854F0B" : "#27500A" }}>
-                      {r.confidence?.toFixed(2)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="card-head">
+              <span>Comments</span>
+              <span className="muted">
+                showing {Math.min(visibleCount, filtered.length)} of {filtered.length}
+                {anyFilter && ` (filtered from ${data.results.length})`}
+              </span>
+            </div>
+
+            <div className="filters">
+              {data.themes.map(t => (
+                <button
+                  key={t}
+                  className={`chip-btn ${filterTheme === t ? "on" : ""}`}
+                  onClick={() => { setFilterTheme(filterTheme === t ? null : t); setVisibleCount(20); }}
+                >{t}</button>
+              ))}
+              <span className="filter-sep" />
+              {["negative", "positive", "neutral"].map(s => (
+                <button
+                  key={s}
+                  className={`chip-btn ${s} ${filterSentiment === s ? "on" : ""}`}
+                  onClick={() => { setFilterSentiment(filterSentiment === s ? null : s); setVisibleCount(20); }}
+                >{s}</button>
+              ))}
+              <button
+                className={`chip-btn ${reviewOnly ? "on" : ""}`}
+                onClick={() => { setReviewOnly(!reviewOnly); setVisibleCount(20); }}
+              >needs review</button>
+              {anyFilter && (
+                <button className="chip-btn clear" onClick={() => {
+                  setFilterTheme(null); setFilterSentiment(null); setReviewOnly(false); setVisibleCount(20);
+                }}>clear</button>
+              )}
+            </div>
+
+            {filtered.length === 0 ? (
+              <p className="empty-msg">No comments match these filters.</p>
+            ) : (
+              <>
+                <table className="tbl">
+                  <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th></tr></thead>
+                  <tbody>
+                    {filtered.slice(0, visibleCount).map(({ r, i }) => {
+                      const ex = corrections[i] === EXCLUDED;
+                      const theme = ex ? "—" : (corrections[i] ?? r.theme);
+                      return (
+                        <tr key={i} className={`${r.needs_review ? "row-review" : ""} ${ex ? "row-excluded" : ""}`}>
+                          <td className="c-comment">{r.comment}</td>
+                          <td className="c-theme">
+                            {theme}
+                            {!ex && r.secondary_themes?.length > 0 && (
+                              <span className="sec-themes"> +{r.secondary_themes.join(", ")}</span>
+                            )}
+                          </td>
+                          <td><span className={`pill ${r.sentiment}`}>{r.sentiment}</span></td>
+                          <td className="c-conf" style={{ color: r.confidence < 0.6 ? "#854F0B" : "#27500A" }}>
+                            {r.confidence?.toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                {filtered.length > visibleCount && (
+                  <button className="show-more" onClick={() => setVisibleCount(visibleCount + 20)}>
+                    Show 20 more ({filtered.length - visibleCount} remaining)
+                  </button>
+                )}
+              </>
+            )}
           </section>
         </>
       )}
