@@ -18,6 +18,8 @@ export default function App() {
   const [reviewOnly, setReviewOnly] = useState(false);
   const [visibleCount, setVisibleCount] = useState(20); // show 20 rows
   const [search, setSearch] = useState("");
+  const [mode, setMode] = useState("analyze"); // "analyze" | "trend"
+  const [trend, setTrend] = useState(null);
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -51,6 +53,34 @@ export default function App() {
         return;
       }
       setData(json);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleTrendUpload(e) {
+    const files = Array.from(e.target.files || []);
+
+    if (files.length < 2) {
+      setError("Select at least two files");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+    setTrend(null);
+
+    const form = new FormData();
+    files.forEach(f => form.append("files", f));
+
+    try {
+      const res = await fetch(`${API}/analyze_trend`, { method: "POST", body: form });
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      const json = await res.json();
+      if (json.error) { setError(json.error); return; }
+      setTrend(json);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -164,18 +194,34 @@ export default function App() {
         {data && <button className="btn" onClick={() => exportCSV(data.results, corrections)}>Export CSV</button>}
       </header>
 
-      {!data && (
+      {!data && !trend && (
         <div className="landing">
-          <h1 className="landing-title">Turn feedback into themes</h1>
-          <p className="landing-sub">Upload open-ended comments — survey responses, reviews, complaints — and get a structured breakdown of what people are saying.</p>
+          <h1 className="landing-title">Turn feedback into clear insights</h1>
+          <p className="landing-sub">
+            Upload open-ended comments (survey responses, reviews, complaints) 
+            and get a structured breakdown of what your customers are saying.
+          </p>
+
+          <div className="mode-toggle">
+            <button className={mode === "analyze" ? "on" : ""} onClick={() => setMode("analyze")}>Feedback Analysis</button>
+            <button className={mode === "trend" ? "on" : ""} onClick={() => setMode("trend")}>Trend Analysis</button>
+          </div>
 
           <label className="dropzone">
             <div className="dz-icon"><Upload size={22} color="#fff" /></div>
             <div className="dz-title">
-              {loading ? "Analyzing your comments…" : "Drop a CSV or click to upload"}
+              {loading ? "Analyzing…" : mode === "analyze"
+                ? "Drop one CSV or click to upload"
+                : "Select 2+ files, one per period"}
             </div>
-            <div className="dz-hint">CSV or Excel — we'll find the comment column</div>
-            <input type="file" accept=".csv,.xlsx" onChange={handleUpload} hidden />
+            <div className="dz-hint">
+              {mode === "analyze"
+                ? "CSV or Excel — we'll find the comment column"
+                : "Please name them in time order: 01_jan.csv, 02_feb.csv…"}
+            </div>
+            <input type="file" accept=".csv,.xlsx" hidden
+              multiple={mode === "trend"}
+              onChange={mode === "trend" ? handleTrendUpload : handleUpload} />
           </label>
 
           {loading && (
@@ -414,7 +460,202 @@ export default function App() {
           </section>
         </>
       )}
+
+      {trend && <TrendView trend={trend} onBack={() => setTrend(null)} />}
     </div>
+  );
+}
+
+function TrendView({ trend, onBack }) {
+  const { themes, periods } = trend;
+  const [active, setActive] = useState(null);
+  const isTrend = periods.length >= 3;
+  const allThemes = [...themes];
+  
+  if (periods.some(p => p.other_count > 0)) allThemes.push("Other");
+  const small = periods.filter(p => p.total < 30); // small sample size
+
+  const delta = (theme) => {
+    const first = periods[0].theme_shares[theme] ?? 0;
+    const last = periods[periods.length - 1].theme_shares[theme] ?? 0;
+    return +(last - first).toFixed(1);
+  };
+
+  const sorted = [...allThemes].sort((a, b) =>
+    (periods[periods.length - 1].theme_shares[b] ?? 0) - 
+    (periods[periods.length - 1].theme_shares[a] ?? 0)
+  );
+
+  return (
+    <>
+      <div className="trend-head">
+        <span>{isTrend ? "Trend across" : "Comparison of"} {periods.length} periods</span>
+        <button className="btn" onClick={onBack}>New upload</button>
+      </div>
+
+      <div className="metrics">
+        {periods.map(p => (
+          <div className="metric" key={p.name}>
+            <div className="metric-label">{p.name}</div>
+            <div className="metric-value">{p.total}</div>
+            <div className="metric-sub">comments</div>
+          </div>
+        ))}
+      </div>
+
+      {small.length > 0 && (
+        <p className="warn">
+          {small.map(p => p.name).join(", ")} {small.length === 1 ? "has" : "have"} under 30
+          comments — percentage shifts there reflect very few responses and should be read with caution.
+        </p>
+      )}
+
+      <section className="card">
+        <div className="card-head">
+          <span>Theme share by period</span>
+          <span className="muted">% of comments</span>
+        </div>
+        <LineChart periods={periods} themes={sorted} active={active} delta={delta}/>
+        <div className="line-legend">
+          {sorted.map((t, i) => (
+            <button
+              key={t}
+              className={`legend-item ${active && active !== t ? "dim" : ""}`}
+              onClick={() => setActive(active === t ? null : t)}
+            >
+              <span className="dot" style={{ background: lineColor(t, i) }} />
+              {t}
+              <span className={`delta ${delta(t) > 0 ? "up" : delta(t) < 0 ? "down" : ""}`}>
+                {delta(t) > 0 ? "+" : ""}{delta(t)}pp
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="illustrative">
+          Change is shown in percentage points (pp) between the first and last period.
+          Shares are used rather than raw counts, since periods differ in size.
+          Click a theme to isolate its line.
+        </p>
+      </section>
+    </>
+  );
+}
+
+const LINE_COLORS = ["#4f46e5", "#E24B4A", "#639922", "#D97706", "#0891B2", "#9333EA", "#B4B2A9"];
+const lineColor = (theme, i) => (theme === "Other" ? "#B4B2A9" : LINE_COLORS[i % LINE_COLORS.length]);
+
+function LineChart({ periods, themes, active, delta }) {
+  const [hover, setHover] = useState(null);
+  const W = 700, H = 280;
+  const padL = 42, padR = 16, padT = 12, padB = 34;
+
+  const maxRaw = Math.max(
+    ...themes.flatMap(t => periods.map(p => p.theme_shares[t] ?? 0)), 10
+  );
+  const maxY = Math.ceil(maxRaw / 10) * 10;
+
+  const x = (i) => padL + (i * (W - padL - padR)) / Math.max(1, periods.length - 1);
+  const y = (v) => padT + (1 - v / maxY) * (H - padT - padB);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(maxY * f));
+
+  const shown = active || hover;   // click wins, hover is transient
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="line-chart">
+      {ticks.map(v => (
+        <g key={v}>
+          <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="#f0f0f4" strokeWidth="1" />
+          <text x={padL - 8} y={y(v) + 4} textAnchor="end" className="axis-label">{v}%</text>
+        </g>
+      ))}
+
+      {periods.map((p, i) => (
+        <text key={p.name} x={x(i)} y={H - 12} textAnchor="middle" className="axis-label">
+          {p.name}
+        </text>
+      ))}
+
+      {themes.map((t, ti) => {
+        const pts = periods.map((p, i) => `${x(i)},${y(p.theme_shares[t] ?? 0)}`).join(" ");
+        const dim = shown && shown !== t;
+        return (
+          <g key={t} opacity={dim ? 0.12 : 1}>
+            {/* invisible wide hit area — makes the thin line easy to hover */}
+            <polyline
+              points={pts}
+              fill="none"
+              stroke="transparent"
+              strokeWidth="16"
+              style={{ pointerEvents: "stroke", cursor: "pointer" }}
+              onMouseEnter={() => setHover(t)}
+              onMouseLeave={() => setHover(null)}
+            />
+            <polyline
+              points={pts}
+              fill="none"
+              stroke={lineColor(t, ti)}
+              strokeWidth={shown === t ? 3 : 2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              style={{ pointerEvents: "none" }}
+            />
+            {periods.map((p, i) => (
+              <circle
+                key={i}
+                cx={x(i)}
+                cy={y(p.theme_shares[t] ?? 0)}
+                r={shown === t ? 4 : 3}
+                fill="#fff"
+                stroke={lineColor(t, ti)}
+                strokeWidth="2"
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setHover(t)}
+                onMouseLeave={() => setHover(null)}
+              >
+                <title>{`${t} — ${p.name}: ${p.theme_shares[t] ?? 0}% (${p.theme_counts[t] ?? 0})`}</title>
+              </circle>
+            ))}
+          </g>
+        );
+      })}
+
+      {/* floating pill label on the hovered line */}
+      {hover && (() => {
+        const last = periods.length - 1;
+        const v = periods[last].theme_shares[hover] ?? 0;
+        const d = delta(hover);
+        const ti = themes.indexOf(hover);
+        const first = periods[0].theme_shares[hover] ?? 0;
+        const label = `${hover} ${first}% → ${v}%`;
+
+        const w = label.length * 6.4 + 18;      // estimated text width + padding
+        const h = 20;
+        const cx = x(last);
+        const cy = Math.max(y(v) - 14, padT + h / 2);
+        const rx = Math.min(cx, W - padR) - w;  // grow leftward, keep inside chart
+
+        return (
+          <g style={{ pointerEvents: "none" }}>
+            <rect
+              x={rx}
+              y={cy - h / 2}
+              width={w}
+              height={h}
+              rx={h / 2}
+              fill={lineColor(hover, ti)}
+            />
+            <text
+              x={rx + w / 2}
+              y={cy + 4}
+              textAnchor="middle"
+              className="hover-pill-text"
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })()}
+    </svg>
   );
 }
 

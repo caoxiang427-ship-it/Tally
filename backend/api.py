@@ -1,12 +1,13 @@
-import io
 import pandas as pd
 import json
+import re
 from fastapi.responses import StreamingResponse
 from collections import Counter
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pipeline import discover_themes, classify_comment
 from concurrent.futures import ThreadPoolExecutor
+from typing import List
 
 app = FastAPI()
 
@@ -74,6 +75,14 @@ def read_csv_robust(raw):
     lines = [re.sub(r'^(\s*\d+\s*,\s*)+', '', l) for l in lines]
     
     return pd.DataFrame({"text": lines}), False
+
+def parse_period(filename, idx):
+    """'01_jan.csv' -> (1, 'jan'). Falls back to upload order"""
+    base = filename.rsplit(".", 1)[0]
+    m = re.match(r"^(\d+)[_\-\s]*(.*)$", base)
+    if m:
+        return int(m.group(1)), (m.group(2).strip() or base)
+    return idx, base
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...), column: str = "text"):
@@ -209,6 +218,80 @@ async def analyze_stream(file: UploadFile = File(...), column: str = None):
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
 
+@app.post("/analyze_trend")
+async def analyze_trend(files: List[UploadFile] = File(...)):
+    if len(files) < 2:
+        return {"error": "Upload at least two files to compare periods."}
+
+    # 1. Read every file into a period
+    periods = []
+    for idx, f in enumerate(files):
+        raw = await f.read()
+        df, clean = read_csv_robust(raw)
+
+        if df is None or len(df) == 0:
+            return {"error": f"Could not read '{f.filename}'."}
+        
+        try:
+            text_col = pick_text_column(df)
+        except ValueError:
+            return {"error": f"No text column found in '{f.filename}'."}
+        
+        comments = df[text_col].dropna().astype(str).tolist()
+        if not comments:
+            return {"error": f"No comments found in '{f.filename}'."}
+        
+        order, name = parse_period(f.filename, idx)
+        periods.append({"order": order, "name": name, "comments": comments,
+                        "clean_parse": clean})
+
+    periods.sort(key=lambda p: p["order"])
+
+    # 2. ONE shared theme list, discovered from a pooled sample across all periods
+    per_file = max(10, 150 // len(periods))
+    pooled = []
+    for p in periods:
+        pooled.extend(p["comments"][:per_file])
+    n = max(3, min(6, len(pooled) // 3))
+    themes = discover_themes(pooled, n_themes=n)
+
+    # 3. Classify every period against that same fixed list
+    def classify_one(c):
+        r = classify_comment(c, themes)
+        return {
+            "theme": r.get("primary_theme", r.get("theme", "Other")),
+            "sentiment": r["sentiment"],
+        }
+    
+    out_periods = []
+    for p in periods:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            results = list(pool.map(classify_one, p["comments"]))
+
+        total = len(results)
+        counts = {t: 0 for t in themes}
+        for r in results:
+            counts[r["theme"]] = counts.get(r["theme"], 0) + 1
+        shares = {t: round(c / total * 100, 1) for t, c in counts.items()}
+
+        sent = {"negative": 0, "positive": 0, "neutral": 0}
+        for r in results:
+            sent[r["sentiment"]] = sent.get(r["sentiment"], 0) + 1
+
+        out_periods.append({
+            "name": p["name"],
+            "order": p["order"],
+            "total": total,
+            "theme_counts": counts,
+            "theme_shares": shares,
+            "other_count": counts.get("Other", 0),
+            "other_share": round(counts.get("Other", 0) / total * 100, 1),
+            "sentiment_counts": sent,
+            "sentiment_shares": {k: round(v / total * 100, 1) for k, v in sent.items()},
+            "clean_parse": p["clean_parse"],
+        })
+
+    return {"themes": themes, "periods": out_periods}
 
 def sse(obj):
     """Format a dict as one Server-Sent Event line."""

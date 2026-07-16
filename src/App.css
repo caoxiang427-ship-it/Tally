@@ -107,3 +107,35 @@
 .search-box { font-size: 12px; padding: 4px 10px; border: 1px solid #e0e0e6;
   border-radius: 6px; outline: none; width: 160px; }
 .search-box:focus { border-color: #4f46e5; }
+
+.mode-toggle { display: inline-flex; gap: 4px; margin-bottom: 20px; }
+.mode-toggle button { font-size: 12px; padding: 6px 14px; border: 1px solid #e0e0e6;
+  background: #fff; border-radius: 8px; cursor: pointer; color: #6a6a77; }
+.mode-toggle button.on { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+.trend-head { display: flex; justify-content: space-between; align-items: center;
+  font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+.metric-sub { font-size: 11px; color: #b0b0bb; }
+.trend-row { padding: 12px 0; border-top: 1px solid #f0f0f4; }
+.trend-row:first-of-type { border-top: none; }
+.trend-label { display: flex; justify-content: space-between; font-size: 13px;
+  font-weight: 500; margin-bottom: 8px; }
+.delta { font-size: 12px; font-weight: 400; color: #8a8a99; }
+.delta.up { color: #791F1F; } .delta.down { color: #27500A; }
+.trend-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.trend-period { font-size: 11px; color: #8a8a99; width: 60px; }
+.trend-bar-row .bar { flex: 1; height: 12px; }
+.trend-val { font-size: 11px; color: #6a6a77; width: 80px; text-align: right;
+  font-variant-numeric: tabular-nums; }
+
+.line-chart { width: 100%; height: auto; display: block; margin-bottom: 12px; }
+.axis-label { font-size: 10px; fill: #8a8a99; font-family: system-ui, sans-serif; }
+.line-legend { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid #f0f0f4; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #6a6a77;
+  background: #fff; border: 1px solid #ececf0; border-radius: 20px; padding: 3px 10px; cursor: pointer; }
+.legend-item:hover { border-color: #b8b8c4; }
+.legend-item.dim { opacity: 0.4; }
+.legend-item .delta { font-size: 10px; }
+.hover-pill-text {
+  font-size: 11px; font-weight: 600; fill: #fff;
+  font-family: system-ui, sans-serif;
+}
