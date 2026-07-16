@@ -17,6 +17,7 @@ export default function App() {
   const [filterSentiment, setFilterSentiment] = useState(null);
   const [reviewOnly, setReviewOnly] = useState(false);
   const [visibleCount, setVisibleCount] = useState(20); // show 20 rows
+  const [search, setSearch] = useState("");
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -35,6 +36,7 @@ export default function App() {
     setFilterSentiment(null);
     setReviewOnly(false);
     setVisibleCount(20);
+    setSearch("");
     // setProgress(null);
 
     const form = new FormData();
@@ -142,11 +144,14 @@ export default function App() {
           if (reviewOnly && !r.needs_review) {
             return false;
           }
+          if (search && !r.comment.toLowerCase().includes(search.toLowerCase())) {
+            return false;
+          }
           return true;
         })
     : [];
   
-  const anyFilter = filterTheme || filterSentiment || reviewOnly;
+  const anyFilter = filterTheme || filterSentiment || reviewOnly || search;
 
   return (
     <div className="app">
@@ -336,6 +341,13 @@ export default function App() {
             </div>
 
             <div className="filters">
+              <input
+                className="search-box"
+                type="text"
+                placeholder="Search comments..."
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setVisibleCount(20); }}
+              />
               {data.themes.map(t => (
                 <button
                   key={t}
@@ -357,7 +369,8 @@ export default function App() {
               >needs review</button>
               {anyFilter && (
                 <button className="chip-btn clear" onClick={() => {
-                  setFilterTheme(null); setFilterSentiment(null); setReviewOnly(false); setVisibleCount(20);
+                  setFilterTheme(null); setFilterSentiment(null); setReviewOnly(false); 
+                  setSearch(""); setVisibleCount(20);
                 }}>clear</button>
               )}
             </div>

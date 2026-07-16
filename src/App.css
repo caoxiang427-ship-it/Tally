@@ -103,3 +103,7 @@
 .show-more:hover { background: #f4f4f8; }
 .empty-msg { font-size: 13px; color: #8a8a99; text-align: center; padding: 20px 0; }
 .row-excluded .c-comment { opacity: 0.45; text-decoration: line-through; }
+
+.search-box { font-size: 12px; padding: 4px 10px; border: 1px solid #e0e0e6;
+  border-radius: 6px; outline: none; width: 160px; }
+.search-box:focus { border-color: #4f46e5; }
