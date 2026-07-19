@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pipeline import discover_themes, classify_comment
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
+from math import sqrt
 
 app = FastAPI()
 
@@ -20,6 +21,63 @@ app.add_middleware(
 
 # below this, or "Other" category, flag for review
 REVIEW_THRESHOLD = 0.6 
+
+def detect_column_roles(df):
+    """Classify each column as text / categorical / date / id / numeric
+    Heuristic-first; ambiguous ones get marked for optional AI tie-break."""
+    roles = []
+    n = len(df)
+    for col in df.columns:
+        s = df[col].dropna()
+        if len(s) == 0: 
+            roles.append({"name": col, "role": "skip", "reason": "empty"})
+            continue
+
+        nunique = s.nunique()
+      
+        is_date = False
+        try:
+            pd.to_datetime(s.astype(str), errors="raise", format="mixed")
+            is_date = True
+        except Exception:
+            is_date = False
+
+        avg_len = s.astype(str).str.len().mean()
+        numeric = pd.api.types.is_numeric_dtype(s) or s.astype(str).str.match(r"^-?\d+\.?\d*$").all()
+
+        if is_date:
+            role, reason = "date", "looks like dates"
+        elif nunique >= n * 0.9 and avg_len < 30:
+            role, reason = "id", "nearly all values unique"
+        elif 2 <= nunique <= 15 and avg_len < 30:
+            role, reason = "categorical", f"{nunique} distinct values — good for grouping"
+        elif numeric:
+            role, reason = "numeric", "continuous numbers - not directly groupable"
+        elif avg_len >= 25:
+            role, reason = "text", "long free-text — good to analyze"
+        else:
+            role, reason = "ambiguous", "unclear — short labels or mixed"
+        
+        roles.append({"name": col, "role": role, "reason": reason,
+                      "avg_len": round(avg_len, 1), "nunique": int(nunique)})
+    return roles
+
+def ai_disambiguate(df, col):
+    """AI tie-break for one ambiguous column: category label or free text?"""
+    sample = df[col].dropna().astype(str).head(8).tolist()
+    prompt = (
+        f"Column values (sample): {sample}\n\n"
+        "Is this column short CATEGORY labels (e.g. region, product, yes/no) "
+        "or open-ended FREE TEXT feedback? Answer with one word: category or text."
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL, messages=[{"role": "user", "content": prompt}], temperature=0)
+        ans = resp.choices[0].message.content.strip().lower()
+        return "categorical" if "categor" in ans else "text"
+    except Exception:
+        return "categorical" # safe default
+            
 
 def pick_text_column(df):
     """Pick the most likely text column from a dataframe."""
@@ -83,6 +141,43 @@ def parse_period(filename, idx):
     if m:
         return int(m.group(1)), (m.group(2).strip() or base)
     return idx, base
+
+@app.post("/detect_columns")
+async def detect_columns(file: UploadFile = File(...)):
+    raw = await file.read()
+    df, clean = read_csv_robust(raw)
+
+    if df is None or len(df) == 0:
+        return {"error": "Could not read this file."}
+
+    roles = detect_column_roles(df)
+    # AI tie-break only for ambiguous ones
+    for r in roles:
+        if r["role"] == "ambiguous":
+            r["role"] = ai_disambiguate(df, r["name"])
+            r["reason"] = "classified by AI (was ambiguous)"
+
+    text_cols = [r["name"] for r in roles if r["role"] == "text"]
+    seg_cols = [r["name"] for r in roles if r["role"] == "categorical"]
+    
+    # best guesses
+    if len(text_cols) > 0:
+        default_text = text_cols[0]
+    else:
+        longest = roles[0]
+
+        for role in roles:
+            if role.get("avg_len", 0) > longest.get("avg_len", 0):
+                longest = role
+
+        default_text = longest["name"]
+
+    return {
+        "roles": roles,
+        "text_columns": text_cols,
+        "segment_columns": seg_cols,
+        "default_text": default_text,
+    }
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...), column: str = "text"):
@@ -291,8 +386,62 @@ async def analyze_trend(files: List[UploadFile] = File(...)):
             "clean_parse": p["clean_parse"],
         })
 
-    return {"themes": themes, "periods": out_periods}
+    first, last = out_periods[0], out_periods[-1]
+    all_themes = list(themes)
+
+    has_other = False
+    for period in out_periods:
+        if period["other_count"] > 0:
+            has_other = True
+            break
+
+    if has_other:
+        all_themes.append("Other")
+
+    significance = {}
+    for t in all_themes:
+        c1 = first["theme_counts"].get(t, 0)
+        c2 = last["theme_counts"].get(t, 0)
+
+        p = two_proportion_p(c1, first["total"], c2, last["total"])
+
+        too_few = (c1 + c2) < 5 or min(first["total"], last["total"]) < 30
+
+        significance[t] = {
+            "p_value": p,
+            "significant": (p is not None and p < 0.05 and not too_few),
+            "too_few": too_few,
+        }
+
+    n_tested = len(all_themes)
+
+    return {
+        "themes": themes, 
+        "periods": out_periods,
+        "significance": significance,
+        "n_tested": n_tested,
+        "compared": [first["name"], last["name"]],
+    }
 
 def sse(obj):
     """Format a dict as one Server-Sent Event line."""
     return f"data: {json.dumps(obj)}\n\n"
+
+# Observed diff / expected random variation
+def two_proportion_p(c1, n1, c2, n2):
+    """Two-sided z-test for difference in proportions. Return p-value"""
+    if n1 == 0 or n2 == 0:
+        return None
+    
+    p1, p2 = c1 / n1, c2 / n2
+    pool = (c1 + c2) / (n1 + n2)
+    se = sqrt(pool * (1 - pool) * (1 / n1 + 1 / n2))
+
+    if se == 0:
+        return 1.0
+    
+    z = (p1 - p2) / se
+
+    from math import erf
+    p = 2 * (1 - 0.5 * (1 + erf(abs(z) / sqrt(2))))
+    return round(p, 4)

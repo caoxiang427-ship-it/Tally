@@ -20,6 +20,10 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [mode, setMode] = useState("analyze"); // "analyze" | "trend"
   const [trend, setTrend] = useState(null);
+  const [detection, setDetection] = useState(null); // column roles from backend
+  const [chosenText, setChosenText] = useState("");
+  const [chosenSegment, setChosenSegment] = useState("");
+  const [pendingFile, setPendingFile] = useState(null);
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -58,6 +62,56 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleFilePick(e) {
+    const file = e.target.files[0];
+
+    if (!file) return;
+
+    setPendingFile(file);           
+    setLoading(true); 
+    setError("");
+
+    const form = new FormData();
+    form.append("file", file);
+
+    try {
+      const res = await fetch(`${API}/detect_columns`, { method: "POST", body: form });
+      const json = await res.json();
+      
+      if (json.error) { setError(json.error); return; }
+      
+      setDetection(json);
+      setChosenText(json.default_text || "");
+      setChosenSegment("");
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  async function runAnalysis() {
+    if (!pendingFile || !chosenText) return;
+
+    setLoading(true); 
+    setError(""); 
+    setDetection(null);
+
+    const form = new FormData();
+    form.append("file", pendingFile);
+
+    try {
+      const res = await fetch(`${API}/analyze?column=${encodeURIComponent(chosenText)}`, {
+        method: "POST", body: form
+      });
+      const json = await res.json();
+
+      if (json.error) { setError(json.error); return; }
+
+      setData(json);
+
+      if (chosenSegment) setSegmentBy(chosenSegment); // auto-open the segment view
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
   }
 
   async function handleTrendUpload(e) {
@@ -221,7 +275,7 @@ export default function App() {
             </div>
             <input type="file" accept=".csv,.xlsx" hidden
               multiple={mode === "trend"}
-              onChange={mode === "trend" ? handleTrendUpload : handleUpload} />
+              onChange={mode === "trend" ? handleTrendUpload : handleFilePick} />
           </label>
 
           {loading && (
@@ -462,12 +516,49 @@ export default function App() {
       )}
 
       {trend && <TrendView trend={trend} onBack={() => setTrend(null)} />}
+
+      {detection && !data && (
+        <div className="modal-overlay">
+          <section className="card modal-card">
+            <div className="card-head">
+              <span>Choose columns to analyze</span>
+            </div>
+            <p className="illustrative">
+              Pick the open-ended text column to analyze. Optionally break results down by a
+              rating or category column. ID and date columns can't be analyzed as feedback.
+            </p>
+
+            <label className="col-select">
+              <span>Analyze this text column</span>
+              <select value={chosenText} onChange={e => setChosenText(e.target.value)}>
+                {detection.roles.filter(r => r.role === "text").map(r =>
+                  <option key={r.name} value={r.name}>{r.name}</option>)}
+                {detection.roles.filter(r => r.role !== "text").map(r =>
+                  <option key={r.name} value={r.name}>{r.name} (looks like {r.role})</option>)}
+              </select>
+            </label>
+
+            <label className="col-select">
+              <span>Break down by (optional)</span>
+              <select value={chosenSegment} onChange={e => setChosenSegment(e.target.value)}>
+                <option value="">None</option>
+                {detection.segment_columns.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+
+            <button className="run-btn" onClick={runAnalysis} disabled={!chosenText}>
+              Analyze
+            </button>
+          </section>
+        </div>
+      )}
+
     </div>
   );
 }
 
 function TrendView({ trend, onBack }) {
-  const { themes, periods } = trend;
+  const { themes, periods, significance, n_tested, compared } = trend;
   const [active, setActive] = useState(null);
   const isTrend = periods.length >= 3;
   const allThemes = [...themes];
@@ -532,9 +623,48 @@ function TrendView({ trend, onBack }) {
           ))}
         </div>
         <p className="illustrative">
-          Change is shown in percentage points (pp) between the first and last period.
-          Shares are used rather than raw counts, since periods differ in size.
-          Click a theme to isolate its line.
+          Changes are shown in percentage points (pp) between the first and last period.
+          Percentages are used instead of raw counts to ensure a fair comparison when 
+          periods contain different numbers of responses.
+          Click a theme to highlight its trend.
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card-head">
+          <span>Which changes are real?</span>
+          <span className="muted">{compared[0]} vs {compared[1]}</span>
+        </div>
+        <table className="tbl sig-tbl">
+          <thead><tr><th>Theme</th><th>Change</th><th>p-value</th><th>Verdict</th></tr></thead>
+          <tbody>
+            {sorted.map(t => {
+              const s = significance[t] || {};
+              const d = delta(t);
+              return (
+                <tr key={t}>
+                  <td>{t}</td>
+                  <td className={d > 0 ? "d-up" : d < 0 ? "d-down" : ""}>
+                    {d > 0 ? "+" : ""}{d}pp
+                  </td>
+                  <td className="c-conf">{s.p_value == null ? "—" : s.p_value}</td>
+                  <td>
+                    {s.too_few
+                      ? <span className="verdict few">too few to tell</span>
+                      : s.significant
+                        ? <span className="verdict sig">significant</span>
+                        : <span className="verdict ns">not significant</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="illustrative">
+          "Significant" indicates that the observed change is unlikely to be due to random chance
+          (two-proportion z-test, p &lt; 0.05). {n_tested} themes were tested, 
+          so a small number of significant results may occur by chance alone. Interpret borderline results with caution.
+          "Too few to tell" means there was insufficient data for a reliable statistical test.
         </p>
       </section>
     </>
