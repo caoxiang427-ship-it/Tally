@@ -142,6 +142,52 @@ def parse_period(filename, idx):
         return int(m.group(1)), (m.group(2).strip() or base)
     return idx, base
 
+"""
+def chi_square_pvalue(table):
+    table: list of rows, each a list of counts (segments x themes).
+    returns p-value for independence. 
+
+    rows = len(table)
+    cols = len(table[0]) if rows else 0
+
+    if rows < 2 or cols < 2:
+        return None
+    
+    grand = sum(sum(r) for r in table)
+
+    if grand == 0:
+        return None
+    
+    row_tot = [sum(r) for r in table]
+    col_tot = []
+    for j in range(cols):
+        total = 0
+        for i in range(rows):
+            total += table[i][j]
+
+        col_tot.append(total)
+
+    # expected = (row total * col total) / grand total
+    chi2 = 0.0
+    for i in range(rows):
+        for j in range(cols):
+            exp = row_tot[i] * col_tot[j] / grand
+            if exp > 0:
+                chi2 += (table[i][j] - exp) ** 2 / exp
+    # degrees of freedom 
+    dof = (rows - 1) * (cols - 1)
+
+    # convert chi-square into z-score via Wilson-Hilferty normal approximation 
+    # if p < 0.05, overall distribution of themes is diff between periods
+    if dof <= 0:
+        return None
+    t = (chi2 / dof) ** (1/3)
+    sd = (2/(9*dof)) ** 0.5
+    z = (t - mean) / sd
+    p = 1 - 0.5 * (1 + erf(z / (2 ** 0.5)))
+    return round(max(0.0, min(1.0, p)), 4)
+"""
+
 @app.post("/detect_columns")
 async def detect_columns(file: UploadFile = File(...)):
     raw = await file.read()
@@ -159,7 +205,7 @@ async def detect_columns(file: UploadFile = File(...)):
 
     text_cols = [r["name"] for r in roles if r["role"] == "text"]
     seg_cols = [r["name"] for r in roles if r["role"] == "categorical"]
-    
+
     # best guesses
     if len(text_cols) > 0:
         default_text = text_cols[0]
@@ -179,6 +225,7 @@ async def detect_columns(file: UploadFile = File(...)):
         "default_text": default_text,
     }
 
+
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...), column: str = "text"):
     raw = await file.read()
@@ -195,6 +242,17 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         return {"error": str(e)}
 
     comments = dataframe[text_col].dropna().astype(str).tolist()
+
+    # Keep non-text columns aligned to the rows we kept, for segmentation
+    kept = dataframe.dropna(subset=[text_col]).reset_index(drop=True)
+    segmentable = []
+    for c in kept.columns:
+        if c == text_col:
+            continue
+        nunique = kept[c].nunique(dropna=True)
+        if 2 <= nunique <= 15 and nunique < len(kept):
+            segmentable.append(c)
+    metadata = kept[segmentable].astype(str).to_dict(orient="records") if segmentable else []
 
     if len(comments) == 0:
         return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
@@ -219,6 +277,9 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
     with ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(classify_one, comments))
 
+    for i, r in enumerate(results):
+        r["meta"] = metadata[i] if i < len(metadata) else {}
+
     # Primary counts (each comment counts once), drives the chart, sums to N
     theme_counts = {t: 0 for t in themes}
     for r in results:
@@ -242,6 +303,7 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
     return {
         "total": len(results),
         "text_column": text_col,
+        "segmentable_columns": segmentable,
         "clean_parse": parsed_cleanly,
         "themes": themes,
         "theme_counts": dict(theme_counts),

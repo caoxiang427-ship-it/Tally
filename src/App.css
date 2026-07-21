@@ -223,3 +223,19 @@
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+.seg-tbl th, .seg-tbl td { text-align: left; }
+.seg-tbl td:nth-child(2), .seg-tbl th:nth-child(2) { color: #8a8a99; }
+.lift-high { color: #791F1F; font-weight: 600; }
+.row-small { opacity: 0.5; }
+.card-head select { font-size: 12px; padding: 4px 8px; border: 1px solid #d9d9e0; border-radius: 6px; }
+
+.seg-tbl th:nth-child(1) { width: 16%; }
+.seg-tbl th:nth-child(2) { width: 8%; }
+.seg-tbl th:nth-child(3) { width: 34%; }
+.seg-tbl th:nth-child(4) { width: 14%; }
+.seg-tbl th:nth-child(5) { width: 14%; }
+.seg-tbl th:nth-child(6) { width: 14%; }
+
+.c-conf-h { text-align: left; padding-right: 4px; }
+.c-conf { text-align: left; padding-right: 4px; font-variant-numeric: tabular-nums; }

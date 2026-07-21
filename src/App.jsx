@@ -24,6 +24,7 @@ export default function App() {
   const [chosenText, setChosenText] = useState("");
   const [chosenSegment, setChosenSegment] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
+  const [segmentBy, setSegmentBy] = useState(null);
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -512,6 +513,54 @@ export default function App() {
               </>
             )}
           </section>
+
+          {data.segmentable_columns?.length > 0 && (
+            <section className="card">
+              <div className="card-head">
+                <span>Breakdown by segment</span>
+                <select value={segmentBy || ""} onChange={e => setSegmentBy(e.target.value || null)}>
+                  <option value="">Choose a column…</option>
+                  {data.segmentable_columns.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              {!segmentBy ? (
+                <p className="empty-msg">Pick a column (e.g. rating, region) to see how themes differ across groups.</p>
+              ) : (() => {
+                const { segments, table } = segmentAnalysis(data.results, corrections, segmentBy);
+                const p = chiSquareP(table);
+                return (
+                  <>
+                    <table className="tbl seg-tbl">
+                      <thead><tr>
+                        <th>{segmentBy}</th><th>n</th><th>Top theme</th><th>Share</th><th>Lift</th><th>% neg</th>
+                      </tr></thead>
+                      <tbody>
+                        {segments.map(s => (
+                          <tr key={s.value} className={s.small ? "row-small" : ""}>
+                            <td>{s.value}</td>
+                            <td>{s.n}</td>
+                            <td>{s.topTheme}</td>
+                            <td>{s.topShare}%</td>
+                            <td className={s.lift >= 1.5 ? "lift-high" : ""}>{s.lift ? `${s.lift}×` : "—"}</td>
+                            <td>{s.negPct}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="illustrative">
+                      "Lift" = how much more common a segment's top theme is versus the overall average
+                      (2× = twice as common). {p != null && (
+                        <> Theme distribution across these groups is{" "}
+                          <b>{p < 0.05 ? "significantly different" : "not significantly different"}</b>{" "}
+                          (chi-square p = {p}).</>
+                      )} This shows association, not causation; segments under 20 responses (greyed) are too small to trust.
+                    </p>
+                  </>
+                );
+              })()}
+            </section>
+          )}
         </>
       )}
 
@@ -555,6 +604,99 @@ export default function App() {
 
     </div>
   );
+}
+
+function segmentAnalysis(results, corrections, column) {
+  const rows = results
+    .map((r, i) => ({ r, i }))
+    .filter(({ i }) => corrections[i] !== EXCLUDED)
+    .map(({ r, i }) => ({ ...r, theme: corrections[i] ?? r.theme }));
+
+  const total = rows.length || 1;
+
+  // overall theme rate = baseline for lift
+  const overall = {};
+  rows.forEach(r => (overall[r.theme] = (overall[r.theme] || 0) + 1));
+  Object.keys(overall).forEach(t => (overall[t] /= total));
+
+  // group rows by the chosen categorical value
+  const groups = {};
+  rows.forEach(r => {
+    const v = r.meta?.[column] ?? "(missing)";
+    (groups[v] ||= []).push(r);
+  });
+
+  const allThemes = Object.keys(overall);
+
+  // per-segment, find the top theme and its lift 
+  // lift = rate here / baseline rate 
+  // lift: how much more common is Delivery among 1-star reviewers than among everyone
+  // r/g/, 2.4x means delivery complaints are 2.4 times over-represented in angry reviews
+  const segments = Object.entries(groups).map(([value, gr]) => {
+    const n = gr.length;
+    const counts = {};
+    const sent = { negative: 0, positive: 0, neutral: 0 };
+    gr.forEach(r => {
+      counts[r.theme] = (counts[r.theme] || 0) + 1;
+      sent[r.sentiment] = (sent[r.sentiment] || 0) + 1;
+    });
+
+    const [topTheme, topCount] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ["—", 0];
+    const segRate = topCount / n;
+    const lift = overall[topTheme] ? +(segRate / overall[topTheme]).toFixed(1) : null;
+
+    return {
+      value, n, topTheme,
+      topShare: Math.round(segRate * 100),
+      lift,
+      negPct: Math.round((sent.negative / n) * 100),
+      counts,
+      small: n < 20,
+    };
+  }).sort((a, b) => b.n - a.n);
+
+  // contingency table (segments x themes) for chi-square
+  const table = segments.map(s => allThemes.map(t => s.counts[t] || 0));
+
+  return { segments, allThemes, table };
+}
+
+function chiSquareP(table) {
+  const rows = table.length, cols = table[0]?.length || 0;
+
+  if (rows < 2 || cols < 2) return null;
+
+  const grand = table.flat().reduce((a, b) => a + b, 0);
+  if (!grand) return null;
+
+  const rowTot = table.map(r => r.reduce((a, b) => a + b, 0));
+  const colTot = Array.from({ length: cols }, (_, j) => table.reduce((s, r) => s + r[j], 0));
+
+  let chi2 = 0;
+  for (let i = 0; i < rows; i++)
+    for (let j = 0; j < cols; j++) {
+      const exp = (rowTot[i] * colTot[j]) / grand;
+      if (exp > 0) chi2 += (table[i][j] - exp) ** 2 / exp;
+    }
+
+  const dof = (rows - 1) * (cols - 1);
+  if (dof <= 0) return null;
+
+  // Wilson–Hilferty normal approximation
+  const t = Math.cbrt(chi2 / dof);
+  const mean = 1 - 2 / (9 * dof);
+  const sd = Math.sqrt(2 / (9 * dof));
+  const z = (t - mean) / sd;
+  const p = 1 - 0.5 * (1 + erf(z / Math.SQRT2));
+  return Math.max(0, Math.min(1, +p.toFixed(4)));
+}
+
+// error function (no Math.erf in JS)
+function erf(x) {
+  const s = x < 0 ? -1 : 1; x = Math.abs(x);
+  const t = 1 / (1 + 0.3275911 * x);
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return s * y;
 }
 
 function TrendView({ trend, onBack }) {
