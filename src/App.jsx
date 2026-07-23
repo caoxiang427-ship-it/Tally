@@ -527,7 +527,7 @@ export default function App() {
               {!segmentBy ? (
                 <p className="empty-msg">Pick a column (e.g. rating, region) to see how themes differ across groups.</p>
               ) : (() => {
-                const { segments, table } = segmentAnalysis(data.results, corrections, segmentBy);
+                const { segments, table, allThemes } = segmentAnalysis(data.results, corrections, segmentBy);
                 const p = chiSquareP(table);
                 return (
                   <>
@@ -556,6 +556,32 @@ export default function App() {
                           (chi-square p = {p}).</>
                       )} This shows association, not causation; segments under 20 responses (greyed) are too small to trust.
                     </p>
+
+                    {(() => {
+                      const anomalies = segmentAnomalies(table, segments, allThemes);
+                      if (anomalies.length === 0) {
+                        return <p className="illustrative">No segment stands out unusually on any theme.</p>;
+                      }
+                      return (
+                        <div className="anomaly-box">
+                          <div className="anomaly-head">What stands out</div>
+                          {anomalies.slice(0, 5).map((a, k) => (
+                            <div className="anomaly-row" key={k}>
+                              <span className={`anom-dot ${a.direction}`} />
+                              <span>
+                                <b>{a.theme}</b> is {a.direction === "over" ? "more" : "less"} common than expected
+                                in <b>{segmentBy} {a.segment}</b> — {a.observed} vs {a.expected} expected
+                                <span className="anom-z"> (z = {a.resid})</span>
+                              </span>
+                            </div>
+                          ))}
+                          <p className="illustrative">
+                            Cells more than 2 standard deviations from what independence would predict.
+                            This flags where the pattern concentrates; it does not establish cause.
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </>
                 );
               })()}
@@ -606,6 +632,7 @@ export default function App() {
   );
 }
 
+// For segment x themes contingency table 
 function segmentAnalysis(results, corrections, column) {
   const rows = results
     .map((r, i) => ({ r, i }))
@@ -661,9 +688,9 @@ function segmentAnalysis(results, corrections, column) {
   return { segments, allThemes, table };
 }
 
+// Are the 2 categorical variables related or independent (e.g., rating groups x themes)
 function chiSquareP(table) {
   const rows = table.length, cols = table[0]?.length || 0;
-
   if (rows < 2 || cols < 2) return null;
 
   const grand = table.flat().reduce((a, b) => a + b, 0);
@@ -691,12 +718,61 @@ function chiSquareP(table) {
   return Math.max(0, Math.min(1, +p.toFixed(4)));
 }
 
-// error function (no Math.erf in JS)
+// error function
 function erf(x) {
   const s = x < 0 ? -1 : 1; x = Math.abs(x);
   const t = 1 / (1 + 0.3275911 * x);
   const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
   return s * y;
+}
+
+// Already build segments x themes contingency table for chi-square
+// Standardised residuals: which specific cells are responsible for the association
+function segmentAnomalies(table, segments, allThemes, minResid = 2) {
+  const rows = table.length, cols = table[0]?.length || 0;
+  if (rows < 2 || cols < 2) return [];
+
+  const grand = table.flat().reduce((a, b) => a + b, 0);
+  if (!grand) return [];
+
+  const rowTot = table.map(r => r.reduce((a, b) => a + b, 0));
+  const colTot = [];
+  for (let j = 0; j < cols; j++) {
+    let sum = 0;
+
+    for (const row of table) {
+      sum += row[j];
+    }
+
+    colTot.push(sum);
+  }
+
+  const out = [];
+  for (let i = 0; i < rows; i++) {
+    for (let j = 0; j < cols; j++) {
+      // if segment and theme had no relationship
+      // expect about "exp" comments among segment A.
+      const exp = (rowTot[i] * colTot[j]) / grand; 
+      if (exp < 1) continue; // counts too small, standardised residuals become unstable 
+
+      const denom = Math.sqrt(exp * (1 - rowTot[i] / grand) * (1 - colTot[j] / grand));
+      if (!denom) continue;
+
+      const resid = (table[i][j] - exp) / denom;
+      if (Math.abs(resid) >= minResid) {
+        out.push({
+          segment: segments[i].value,
+          theme: allThemes[j],
+          observed: table[i][j],
+          expected: +exp.toFixed(1),
+          resid: +resid.toFixed(1),
+          direction: resid > 0 ? "over" : "under",
+          n: segments[i].n,
+        })
+      }
+    }
+  }
+  return out.sort((a, b) => Math.abs(b.resid) - Math.abs(a.resid));
 }
 
 function TrendView({ trend, onBack }) {
@@ -718,6 +794,28 @@ function TrendView({ trend, onBack }) {
     (periods[periods.length - 1].theme_shares[b] ?? 0) - 
     (periods[periods.length - 1].theme_shares[a] ?? 0)
   );
+
+  function periodAnomalies(periods, themes, minZ = 2) {
+    if (periods.length < 4) return null;
+
+    const latest = periods[periods.length - 1]
+    const prior = periods.slice(0, -1);
+
+    return themes.map(t => {
+      const hist = prior.map(p => p.theme_shares[t] ?? 0);
+      const mean = hist.reduce((a, b) => a + b, 0) / hist.length;
+      const variance = hist.reduce((s, v) => s + (v - mean) ** 2, 0) / (hist.length - 1);
+      const sd = Math.sqrt(variance);
+      const now = latest.theme_shares[t] ?? 0;
+
+      if (sd < 0.5) return null;
+
+      const z = (now - mean) / sd;
+      return Math.abs(z) >= minZ
+        ? { theme: t, now, mean: +mean.toFixed(1), z: +z.toFixed(1) }
+        : null;
+    }).filter(Boolean).sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+  }
 
   return (
     <>
@@ -808,6 +906,47 @@ function TrendView({ trend, onBack }) {
           so a small number of significant results may occur by chance alone. Interpret borderline results with caution.
           "Too few to tell" means there was insufficient data for a reliable statistical test.
         </p>
+
+        {(() => {
+          const anom = periodAnomalies(periods, sorted);
+          if (anom === null) {
+            return (
+              <section className="card">
+                <div className="card-head"><span>Anomaly detection</span></div>
+                <p className="illustrative">
+                  Needs at least 4 periods to establish a baseline. With {periods.length} periods,
+                  use the significance test above instead.
+                </p>
+              </section>
+            );
+          }
+          return (
+            <section className="card">
+              <div className="card-head">
+                <span>Anomaly detection</span>
+                <span className="muted">{periods[periods.length - 1].name} vs prior periods</span>
+              </div>
+              {anom.length === 0 ? (
+                <p className="empty-msg">Nothing in the latest period falls outside its normal range.</p>
+              ) : (
+                anom.map(a => (
+                  <div className="anomaly-row" key={a.theme}>
+                    <span className={`anom-dot ${a.z > 0 ? "over" : "under"}`} />
+                    <span>
+                      <b>{a.theme}</b> is at {a.now}%, vs a prior average of {a.mean}%
+                      <span className="anom-z"> (z = {a.z})</span>
+                    </span>
+                  </div>
+                ))
+              )}
+              <p className="illustrative">
+                Compares the latest period against the mean and spread of earlier periods.
+                With few prior periods the baseline is unstable — treat as a prompt to investigate,
+                not a conclusion.
+              </p>
+            </section>
+          );
+        })()}
       </section>
     </>
   );

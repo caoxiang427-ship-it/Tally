@@ -239,3 +239,12 @@
 
 .c-conf-h { text-align: left; padding-right: 4px; }
 .c-conf { text-align: left; padding-right: 4px; font-variant-numeric: tabular-nums; }
+
+.anomaly-box { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f0f0f4; }
+.anomaly-head { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.anomaly-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px;
+  line-height: 1.5; padding: 6px 0; }
+.anom-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+.anom-dot.over { background: #E24B4A; }
+.anom-dot.under { background: #4f46e5; }
+.anom-z { color: #8a8a99; font-size: 11px; }
