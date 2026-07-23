@@ -467,7 +467,7 @@ async def analyze_trend(files: List[UploadFile] = File(...)):
 
         p = two_proportion_p(c1, first["total"], c2, last["total"])
 
-        too_few = (c1 + c2) < 5 or min(first["total"], last["total"]) < 30
+        too_few = (c1 + c2) < 5 
 
         significance[t] = {
             "p_value": p,

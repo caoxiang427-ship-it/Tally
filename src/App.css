@@ -248,3 +248,6 @@
 .anom-dot.over { background: #E24B4A; }
 .anom-dot.under { background: #4f46e5; }
 .anom-z { color: #8a8a99; font-size: 11px; }
+
+.topbar-actions { display: flex; gap: 8px; }
+.back-btn { margin-bottom: 20px; }

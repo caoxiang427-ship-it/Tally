@@ -25,6 +25,7 @@ export default function App() {
   const [chosenSegment, setChosenSegment] = useState("");
   const [pendingFile, setPendingFile] = useState(null);
   const [segmentBy, setSegmentBy] = useState(null);
+  const [showLanding, setShowLanding] = useState(false);
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -73,6 +74,8 @@ export default function App() {
     setPendingFile(file);           
     setLoading(true); 
     setError("");
+    setShowLanding(false);
+    setTrend(null);
 
     const form = new FormData();
     form.append("file", file);
@@ -126,6 +129,9 @@ export default function App() {
     setLoading(true);
     setError("");
     setTrend(null);
+    setShowLanding(false);
+    setData(null);
+    setDetection(null);
 
     const form = new FormData();
     files.forEach(f => form.append("files", f));
@@ -244,13 +250,25 @@ export default function App() {
         <div className="brand">
           <div className="logo">T</div>
           <span className="brand-name">Tally</span>
-          {data && <span className="chip">{data.total} rows</span>}
+          {data && !showLanding && <span className="chip">{data.total} rows</span>}
         </div>
-        {data && <button className="btn" onClick={() => exportCSV(data.results, corrections)}>Export CSV</button>}
+        <div className="topbar-actions">
+          {(data || trend) && !showLanding && (
+            <button className="btn" onClick={() => setShowLanding(true)}>Start a new analysis</button>
+          )}
+          {data && !showLanding && (
+            <button className="btn" onClick={() => exportCSV(data.results, corrections)}>Export CSV</button>
+          )}
+        </div>
       </header>
 
-      {!data && !trend && (
+      {(showLanding || (!data && !trend && !detection)) && (
         <div className="landing">
+          {(data || trend) && (
+            <button className="btn back-btn" onClick={() => setShowLanding(false)}>
+              ← Back to previous results
+            </button>
+          )}
           <h1 className="landing-title">Turn feedback into clear insights</h1>
           <p className="landing-sub">
             Upload open-ended comments (survey responses, reviews, complaints) 
@@ -299,7 +317,7 @@ export default function App() {
         </div>
       )}
 
-      {data && d && (
+      {data && d && !showLanding && (
         <>
           {data.text_column && (
             <>
@@ -590,9 +608,9 @@ export default function App() {
         </>
       )}
 
-      {trend && <TrendView trend={trend} onBack={() => setTrend(null)} />}
+      {trend && !showLanding && <TrendView trend={trend} onBack={() => setTrend(null)} />}
 
-      {detection && !data && (
+      {detection && !data && !showLanding && (
         <div className="modal-overlay">
           <section className="card modal-card">
             <div className="card-head">
