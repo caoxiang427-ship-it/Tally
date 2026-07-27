@@ -18,7 +18,8 @@ Eval set: 360 CFPB complaints, 6 balanced categories, SEED=42, gpt-5.4-mini.
     clearing the pre-registered ≥ 0.10 bar. Close to, but does not exceed, the
     stronger TF-IDF baseline (0.779)
 
-- Against the stronger TF-IDF baseline: a tie — TF-IDF leads macro-F1, Tally leads κ.
+- Against the stronger TF-IDF baseline: competitive — TF-IDF leads on macro-F1,
+  Tally leads on κ, without using any labeled training data.
 
 ## Consistency across runs
 
