@@ -1,7 +1,6 @@
 # Running log of failures and oddities
 
 A running log of bugs, unexpected behaviours, and identified limitations,
-maintained from Day 3 onward rather than reconstructed at the end.
 
 **[Fixed]** — addressed, with the fix described.
 **[Inherent]** — a real limitation that remains, by design or by nature of the model.
@@ -127,11 +126,13 @@ rows must be filtered out before sampling; otherwise, the evaluation set would c
 blank inputs that cannot be classified.
 
 ### [Fixed] `groupby` moved the grouping column into the index
+
 The initial class-balanced sampling implementation failed with `KeyError: ['label'] not in index`
 because `groupby("Product")` moved `Product` into the index. Replaced the groupby
 with an explicit per-category loop. 
 
 ### [Inherent, by design] The keyword baseline is intentionally simplistic
+
 When no keyword matches, the baseline defaults to predicting "Credit reporting", the
 largest class. This biases recall toward that category and prevents the model from abstaining on 
 uncertain cases. As a result, it serves only as a deliberately weak lower bound,
@@ -141,6 +142,7 @@ credible baseline.
 ## Day 5 - Evaluation and interpretation
 
 ### [Finding] Metric disagreement between macro-F1 and κ, caused by abstention
+
 TF-IDF led macro-F1 (0.779 vs 0.736) and Tally led Cohen's κ (0.827 vs 0.737).
 The gap traces to abstention: Tally assigned "Other" to 3/360 complaints, and
 since no true label is ever "Other," these count against macro-F1. Inspection of
@@ -150,6 +152,7 @@ the text better than the assigned CFPB label. The small macro-F1 gap therefore
 reflects a decision to abstain on hard cases, not weaker classification. 
 
 ### [Finding] Run-to-run instability tracks genuine ambiguity
+
 Consistency measured ~97-98% (58-59 / 60 across two measurements; the figure
 varies slightly between measurements, as expected for a stochastic system).
 Disagreements are not random: they fall on complaints that legitimately belong to
@@ -159,7 +162,76 @@ concentrated where the ground truth is itself ambiguous, not spread across
 clear-cut cases.
 
 ### [Note] Macro-F1 has no absolute interpretation
+
 Unlike κ (interpreted on the Landis & Koch scale), macro-F1 has no standard
 "good/bad" thresholds. It is therefore reported only relative to baselines
 (keyword, TF-IDF) and to chance (~0.17 on six balanced classes), never as an
 absolute score.
+
+## Day 8 - Robustness and scale
+
+### [Fixed] Silent data loss on messy CSVs
+
+Unquoted commas in comment fields made pandas miscount columns and drop rows. 
+A 5-row file silently became 3 rows, flipping the dashboard to a false "100% negative". 
+
+Root cause: comment text with commas read as extra columns. 
+
+Fix: layered file reader (standard -> auto-delimiter -> Excel -> line-by-line), 
+which keeps every comment, plus a UI warning when the line-by-line fallback fires.
+
+### [Fixed] Parallelism cuts latency
+
+Processing of 100 rows sequentially took ~3 min. By running classification 
+through a 10-thread pool, processing time dropped to ~37 seconds for 200 rows. 
+This optimisation uses parallelism rather than batching—each comment. 
+So, API cost is unchanged, only wall-clock time is reduced. 
+
+### [Finding] Adaptive theme count required a minimum threshold
+
+Setting n_themes = len // 3 produced only 3 themes for a 10-row dataset, 
+causing comments such as "support was fantastic" to be grouped into Other 
+because no support theme was generated. The issue did not produce errors 
+but instead forced valid comments into inappropriate themes. 
+A minimum theme count was introduced and validated on larger, real-sized datasets.
+
+## Day 8 - Multi-label and honesty in counts
+### [Finding] Muli-label feedback breaks single-count summaries
+
+Comments often span multiple themes (e.g. "broken AND returns were a nightmare"). 
+Counting only the primary theme keeps totals equal to N, while counting every mentioned 
+theme results in totals exceeding N. Rather than forcing a single interpretation, 
+both views were retained and exposed through a Primary/Mentions toggle, making the counting method explicit.
+
+### [Observed] Theme capacity and single sentiment struggle with mixed feedback
+
+Comments such as "Too expensive and the quality feels cheap for the price" naturally 
+span both pricing and quality. Increasing the number of themes improves coverage but 
+cannot eliminate inherently cross-cutting feedback. Likewise, assigning a single 
+sentiment label oversimplifies mixed opinions. Multi-label themes mitigate the issue, 
+but the remaining ambiguity is inherent to the data rather than a system bug.
+
+## Day 8 - Statistics
+### [Finding] Z-score anomaly detection requires baseline variation
+
+A theme that is perfectly stable then spikes (sd ~ 0) yields an undefined z-score, so the
+z-test anomaly detector cannot flag the single most alarming case. Guard (sd < 0.5 skip)
+prevents false alarms on flat baselines but also blocks this true positive. Note: the
+significance test in the same view (two-proportion z-test, which does not divide by variance)
+DID flag this case independently - so a user sees the finding there. The two detectors are not
+coordinated in code; they are separate views that happen to have complementary blind spots.
+Coordinating them (fall back to the proportion test when variance is zero) is a next step.
+
+### [Finding] Blanket sample-size guard hid genuine significance
+
+A rule marking any period with fewer than 30 comments as "too few" suppressed legitimate findings, 
+including an App performance increase of +60 percentage points (p = 0.006). The dataset-level 
+threshold proved overly conservative. A per-theme minimum count check (c1 + c2 < 5) is 
+the more appropriate safeguard for a two-proportion test.
+
+### [Verified] Hand-written statistical methods match SciPy
+
+Implemented the error function (erf), two-proportion z-test, and chi-square test without relying 
+on SciPy. Verified against SciPy's reference implementations: erf accurate to approximately 1×10⁻⁷, 
+z-test identical to 4 decimal places, and chi-square (Wilson–Hilferty approximation) within 0.0002. 
+Statistical conclusions were identical across all verification cases. See STATS_VERIFICATION.md for details.
