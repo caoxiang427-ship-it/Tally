@@ -61,13 +61,80 @@ evaluation set.
 
 *Status: acknowledged.*
 
+## 5. Feature limitation 
+
+### Single text column only. 
+Analyses one open-ended column; surveys with several free-text questions
+("what went well" vs "what to improve") are only partially covered. Now, 
+users can select which column to analyze. 
+
+*Status: next step - user-selectable / multiple text columns.*
+
+### Single segment dimension. 
+Breakdowns are one categorical column at a time; no cross-segmentation
+(e.g. region x plan together).
+
+*Status: next step - cross-segmentation.*
+
+### Continuous numerics not segmentable. 
+Columns like price or age have too many distinct values to group
+directly and are flagged "numeric" rather than offered as segments.
+
+*Status: next step - bucketing.*
+
+### Session-only corrections and exclusions. 
+Human review edits update the live dashboard and export but
+are not persisted; a refresh loses them.
+
+*Status: inherent without storage; persistence is a next step.*
+
+### Trend is comparison, not monitoring. 
+Files are re-analysed each session against one shared theme list;
+there is no stored history, and new data is analysed only when files
+are uploaded.
+
+*Status: scoped - "comparison over time", not continuous monitoring.*
+
+## 6. Statistical limitations
+
+### Anomaly detection needs baseline variance. 
+Z-scores cannot flag a perfectly stable theme that suddenly spikes (sd ~ 0 -> undefined). 
+The significance test catches these cases instead.
+
+*Status: inherent to z-scoring; mitigated by pairing with the proportion test.*
+
+### Period anomaly needs >= 4 periods. 
+Below that the tool declines to compute rather than report an unreliable baseline.
+
+*Status: intended guard.*
+
+### Tests are verified, not baseline-validated. 
+Chi-square, two-proportion z-test, and standardised residuals are standard tests, hand-implemented 
+without scipy and verified against scipy for correctness (STATS_VERIFICATION.md). They are mathematical, 
+not empirical, so there is no ground truth to validate against - only correct implementation and honest 
+application (small-sample flags, multiple-comparisons disclosure).
+
+*Status: verified; application guarded.*
+
+### Multiple comparisons. 
+Trend significance tests every theme, so ~1 in 20 may appear significant by chance.
+Disclosed in-app; no formal correction applied.
+Status: disclosed, not corrected - correction is a next step.
+
 ## Next steps
 
-1. **Multi-label evaluation.** Hand-label a small multi-label validation set so the
-   multi-label pipeline (already built) can be measured, not just shipped.
-2. **Full taxonomy.** Extend to all ~20 CFPB categories and report the accuracy drop
-   honestly, to characterize how the approach scales with class count.
-3. **Confidence + human-in-the-loop.** Surface per-label confidence and route low-confidence
-   items for review — turns abstention into an actionable workflow.
-4. **Second domain.** Run the pipeline on a non-financial dataset (e.g. app reviews) to
-   test the "adapts without relabeling" claim empirically, not just by argument.
+### Built since (move out of "next steps"):
+- Confidence + human-in-the-loop review queue - BUILT (surfaces low-confidence/Other items for
+  correction or exclusion; edits are also applied to the export).
+- Multi-label classification - BUILT (primary + secondary themes).
+
+### Still open:
+1. Multi-label evaluation. The multi-label pipeline ships but is not measured; needs a hand-labelled
+   multi-label validation set.
+2. Full taxonomy. Extend to all ~20 CFPB categories and report the accuracy drop honestly.
+3. Persistence. Store analyses and corrections so trend/monitoring and review survive a session.
+4. Multiple text columns and cross-segmentation. Handle multi-question surveys and two-dimensional
+   breakdowns.
+5. Second domain. Run on a non-financial dataset to test the "adapts without relabelling" claim
+   empirically, not just by argument.
+6. Multiple-comparisons correction and confidence calibration. 
