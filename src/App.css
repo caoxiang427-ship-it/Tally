@@ -256,3 +256,17 @@
 
 .topbar-actions { display: flex; gap: 8px; }
 .back-btn { margin-bottom: 20px; }
+
+.context-input { font-size: 13px; padding: 8px 10px; border: 1px solid #d9d9e0; border-radius: 8px; }
+.context-input:focus { border-color: #4f46e5; outline: none; }
+
+.context-note {
+  font-size: 12px;
+  color: #6a6a77;
+  background: #f4f3ff;
+  border: 1px solid #e5e3fb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  line-height: 1.5;
+}

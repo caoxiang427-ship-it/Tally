@@ -8,11 +8,17 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = "gpt-5.4-mini"   # one place to swap models later
 
-def _discover_once(comments, n_themes=6):
+def _discover_once(comments, n_themes=6, context=None):
     """One discovery pass over one sample"""
     sample = "\n".join(f"- {c}" for c in comments)
+    context_line = (
+        f"These comments are feedback about: {context}. "
+        "Choose themes relevant to that domain.\n\n"
+        if context else ""
+    )
     prompt = (
         f"Here are open-ended feedback comments:\n\n{sample}\n\n"
+        f"{context_line}"
         "Some comments may contain extra appended fields such as dates, ID "
         "numbers, or ratings from a malformed file. Ignore those and focus only "
         "on the human-written feedback. Do NOT create themes about dates, "
@@ -36,7 +42,7 @@ def _discover_once(comments, n_themes=6):
     text = text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
 
-def discover_themes(comments, n_themes=6, n_samples=3, sample_size=150, seed=42):
+def discover_themes(comments, n_themes=6, context=None, n_samples=3, sample_size=150, seed=42):
     """Pass 1: discover themes from several random samples, then merge.
 
     Themes that recur across independent samples are more likely to represent
@@ -47,7 +53,7 @@ def discover_themes(comments, n_themes=6, n_samples=3, sample_size=150, seed=42)
 
     # If there are not many comments, one pass over everything is enough
     if len(comments) <= sample_size:
-        return _discover_once(comments, n_themes)
+        return _discover_once(comments, n_themes, context)
 
     # Run theme discovery on n_samples independently sampled subsets
     all_lists = []

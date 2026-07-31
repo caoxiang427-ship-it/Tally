@@ -27,6 +27,7 @@ export default function App() {
   const [pendingFile, setPendingFile] = useState(null);
   const [segmentBy, setSegmentBy] = useState(null);
   const [showLanding, setShowLanding] = useState(false);
+  const [context, setContext] = useState("");
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -46,6 +47,7 @@ export default function App() {
     setReviewOnly(false);
     setVisibleCount(20);
     setSearch("");
+    setContext("");
     // setProgress(null);
 
     const form = new FormData();
@@ -105,9 +107,9 @@ export default function App() {
     form.append("file", pendingFile);
 
     try {
-      const res = await fetch(`${API}/analyze?column=${encodeURIComponent(chosenText)}`, {
-        method: "POST", body: form
-      });
+      const params = new URLSearchParams({ column: chosenText });
+      if (context.trim()) params.append("context", context.trim());
+      const res = await fetch(`${API}/analyze?${params}`, { method: "POST", body: form });
       const json = await res.json();
 
       if (json.error) { setError(json.error); return; }
@@ -276,6 +278,17 @@ export default function App() {
             and get a structured breakdown of what your customers are saying.
           </p>
 
+          <label className="col-select">
+            <span>What's this feedback about? (optional)</span>
+            <input
+              type="text"
+              className="context-input"
+              placeholder="e.g. a coffee shop, a banking app, a clothing store"
+              value={context}
+              onChange={e => setContext(e.target.value)}
+            />
+          </label>
+
           <div className="mode-toggle">
             <button className={mode === "analyze" ? "on" : ""} onClick={() => setMode("analyze")}>Feedback Analysis</button>
             <button className={mode === "trend" ? "on" : ""} onClick={() => setMode("trend")}>Trend Analysis</button>
@@ -320,6 +333,18 @@ export default function App() {
 
       {data && d && !showLanding && (
         <>
+          {data.context ? (
+            <p className="context-note">
+              Themes were focused around <b>{data.context}</b>. Discovered themes reflect this context —
+              a different context would surface different themes from the same comments.
+            </p>
+          ) : (
+            <p className="context-note">
+              Themes were discovered from the comments alone. Adding a context on upload
+              (e.g. "a coffee shop", "a banking app") can focus them toward your domain.
+            </p>
+          )}
+          
           {data.text_column && (
             <>
               <p className="detected">Analyzing column: <b>{data.text_column}</b></p>

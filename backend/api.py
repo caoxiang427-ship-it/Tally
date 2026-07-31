@@ -227,7 +227,7 @@ async def detect_columns(file: UploadFile = File(...)):
 
 
 @app.post("/analyze")
-async def analyze(file: UploadFile = File(...), column: str = "text"):
+async def analyze(file: UploadFile = File(...), column: str = None, context: str = None):
     raw = await file.read()
 
     dataframe, parsed_cleanly = read_csv_robust(raw)
@@ -263,7 +263,7 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
 
     n = max(3, min(6, len(comments) // 2)) # scale theme count to data size
-    themes = discover_themes(comments, n_themes=n)
+    themes = discover_themes(comments, n_themes=n, context=context)
 
     def classify_one(c):
         r = classify_comment(c, themes)
@@ -316,9 +316,9 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
             return [clean_nan(x) for x in obj]
         return obj
 
-
     return clean_nan({
         "total": len(results),
+        "context": context or "",
         "text_column": text_col,
         "segmentable_columns": segmentable,
         "clean_parse": parsed_cleanly,
