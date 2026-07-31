@@ -1,9 +1,10 @@
 import { useState } from "react";
 import "./App.css";
 import { LayoutGrid, BarChart3, MessageSquareQuote, Upload } from "lucide-react";
+import tallyLogo from './assets/tally_icon.png';
 
 const API = "http://127.0.0.1:8000";
-const COLORS = { negative: "#E24B4A", positive: "#639922", neutral: "#B4B2A9" };
+const COLORS = { negative: "#f43f5e", positive: "#10b981", neutral: "#B4B2A9" };
 const EXCLUDED = "__excluded__";
 
 export default function App() {
@@ -248,7 +249,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <div className="logo">T</div>
+          <img src={tallyLogo} alt="Tally logo" className="logo-badge" />
           <span className="brand-name">Tally</span>
           {data && !showLanding && <span className="chip">{data.total} rows</span>}
         </div>
@@ -257,7 +258,7 @@ export default function App() {
             <button className="btn" onClick={() => setShowLanding(true)}>Start a new analysis</button>
           )}
           {data && !showLanding && (
-            <button className="btn" onClick={() => exportCSV(data.results, corrections)}>Export CSV</button>
+            <button className="btn" onClick={() => exportCSV(data.results, corrections)}>Export classified CSV</button>
           )}
         </div>
       </header>
@@ -827,7 +828,7 @@ function TrendView({ trend, onBack }) {
       const now = latest.theme_shares[t] ?? 0;
 
       if (sd < 0.5) return null;
-
+      
       const z = (now - mean) / sd;
       return Math.abs(z) >= minZ
         ? { theme: t, now, mean: +mean.toFixed(1), z: +z.toFixed(1) }

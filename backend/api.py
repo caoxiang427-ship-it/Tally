@@ -252,7 +252,12 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         nunique = kept[c].nunique(dropna=True)
         if 2 <= nunique <= 15 and nunique < len(kept):
             segmentable.append(c)
-    metadata = kept[segmentable].astype(str).to_dict(orient="records") if segmentable else []
+    metadata = (
+        kept[segmentable]
+        .fillna("(missing)")
+        .astype(str)
+        .to_dict(orient="records") 
+    ) if segmentable else []
 
     if len(comments) == 0:
         return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
@@ -300,7 +305,19 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
             examples[r["theme"]].append(r["comment"])
 
     review_count = sum(1 for r in results if r["needs_review"])
-    return {
+
+    import math
+    def clean_nan(obj):
+        if isinstance(obj, float) and math.isnan(obj):
+            return None
+        if isinstance(obj, dict):
+            return {k: clean_nan(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [clean_nan(x) for x in obj]
+        return obj
+
+
+    return clean_nan({
         "total": len(results),
         "text_column": text_col,
         "segmentable_columns": segmentable,
@@ -312,7 +329,7 @@ async def analyze(file: UploadFile = File(...), column: str = "text"):
         "examples": examples,
         "results": results,
         "review_count": review_count,
-    }
+    })
 
 @app.post("/analyze_stream")
 async def analyze_stream(file: UploadFile = File(...), column: str = None):
