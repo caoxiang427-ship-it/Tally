@@ -235,3 +235,11 @@ Implemented the error function (erf), two-proportion z-test, and chi-square test
 on SciPy. Verified against SciPy's reference implementations: erf accurate to approximately 1×10⁻⁷, 
 z-test identical to 4 decimal places, and chi-square (Wilson–Hilferty approximation) within 0.0002. 
 Statistical conclusions were identical across all verification cases. See STATS_VERIFICATION.md for details.
+
+## Day 12 - Improved Missing Data Handling
+### [Fixed] NaN in metadata crashed JSON serialisation
+
+Empty cells in segment columns became NaN, wich is not JSON-compliant. Fixed by filling missing metadata 
+with "(missing)" before serialisation. Added a recursive check to replace any remaining NaN values in 
+the response. This issue only surfaced when testing with a deliberately messy dataset, as clean datasets 
+contained no missing values.
