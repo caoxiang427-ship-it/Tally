@@ -243,3 +243,4 @@ Empty cells in segment columns became NaN, wich is not JSON-compliant. Fixed by 
 with "(missing)" before serialisation. Added a recursive check to replace any remaining NaN values in 
 the response. This issue only surfaced when testing with a deliberately messy dataset, as clean datasets 
 contained no missing values.
+

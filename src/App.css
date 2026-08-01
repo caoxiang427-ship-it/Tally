@@ -270,3 +270,16 @@
   margin: 0 0 12px;
   line-height: 1.5;
 }
+
+.suggested {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #eef6ff;
+  color: #1d4ed8;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border: 1px solid #bfdbfe;
+  line-height: 1.2;
+}

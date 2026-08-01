@@ -1,6 +1,6 @@
 import { useState } from "react";
 import "./App.css";
-import { LayoutGrid, BarChart3, MessageSquareQuote, Upload } from "lucide-react";
+import { LayoutGrid, BarChart3, Sigma, Upload } from "lucide-react";
 import tallyLogo from './assets/tally_icon.png';
 
 const API = "http://127.0.0.1:8000";
@@ -324,9 +324,9 @@ export default function App() {
             <Feature icon={<LayoutGrid size={20} color="#4f46e5" />}
               title="Discovers themes" text="Finds the topics automatically — no setup or labels." />
             <Feature icon={<BarChart3 size={20} color="#4f46e5" />}
-              title="Counts and charts" text="See how often each theme comes up, with sentiment." />
-            <Feature icon={<MessageSquareQuote size={20} color="#4f46e5" />}
-              title="Real examples" text="Every theme backed by actual quotes from the data." />
+              title="Charts and trends" text="Counts each theme with sentiment, and tracks change over time." />
+            <Feature icon={<Sigma size={20} color="#4f46e5" />}
+              title="Tests what's real" text="Significance and segment tests separate real shifts from noise." />
           </div>
         </div>
       )}
@@ -344,7 +344,7 @@ export default function App() {
               (e.g. "a coffee shop", "a banking app") can focus them toward your domain.
             </p>
           )}
-          
+
           {data.text_column && (
             <>
               <p className="detected">Analyzing column: <b>{data.text_column}</b></p>
@@ -449,9 +449,27 @@ export default function App() {
                 These comments were classified with low confidence, or matched no theme. Correct the
                 theme if needed — changes update the charts and the exported CSV.
               </p>
-              {data.results.map((r, i) =>
-                r.needs_review ? (
+              {data.results.map((r, i) => {
+                if (!r.needs_review) return null;
 
+                // AI suggestion becomes the default ONLY for unmatched rows; a human pick always wins.
+                const aiDefault =
+                  r.theme === "Other" && r.suggested_theme ? r.suggested_theme : r.theme;
+                const selected = corrections[i] ?? aiDefault;
+
+                // The suggested theme may not be in the discovered set (e.g. "Packaging waste"
+                // when it wasn't discovered) — make sure it's still a selectable option.
+                const baseOptions = [...data.themes, "Other"];
+                const options =
+                  r.suggested_theme && !baseOptions.includes(r.suggested_theme)
+                    ? [...data.themes, r.suggested_theme, "Other"]
+                    : baseOptions;
+
+                // True when the shown value is an AI default the human hasn't confirmed yet.
+                const isAiSuggested =
+                  corrections[i] == null && r.theme === "Other" && selected === r.suggested_theme;
+
+                return (
                   <div className={`review-row ${corrections[i] === EXCLUDED ? "is-excluded" : ""}`} key={i}>
                     <div className="review-comment">{r.comment}</div>
                     <div className="review-controls">
@@ -459,21 +477,21 @@ export default function App() {
                         {r.theme === "Other" ? "no theme matched" : `low conf ${r.confidence?.toFixed(2)}`}
                       </span>
                       <select
-                        value={corrections[i] ?? r.theme}
+                        value={selected}
                         onChange={(e) => setCorrections({ ...corrections, [i]: e.target.value })}
                       >
-                        {[...data.themes, "Other"].map(t => <option key={t} value={t}>{t}</option>)}
+                        {options.map(t => <option key={t} value={t}>{t}</option>)}
                         <option value={EXCLUDED}>— Exclude (not feedback)</option>
                       </select>
                       {corrections[i] === EXCLUDED && <span className="excluded-tag">excluded</span>}
-                      {corrections[i] && corrections[i] !== EXCLUDED && corrections[i] !== r.theme && (
+                      {corrections[i] && corrections[i] !== EXCLUDED && corrections[i] !== aiDefault && (
                         <span className="corrected-tag">corrected</span>
                       )}
+                      {isAiSuggested && <span className="suggested">AI-suggested · unconfirmed</span>}
                     </div>
                   </div>
-
-                ) : null
-              )}
+                );
+              })}
             </section>
           )}
           <section className="card">
@@ -525,8 +543,8 @@ export default function App() {
             ) : (
               <>
                 <table className="tbl">
-                  <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th></tr></thead>
-                  <tbody>
+                    <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th></tr></thead>
+                <tbody>
                     {filtered.slice(0, visibleCount).map(({ r, i }) => {
                       const ex = corrections[i] === EXCLUDED;
                       const theme = ex ? "—" : (corrections[i] ?? r.theme);
@@ -536,7 +554,7 @@ export default function App() {
                           <td className="c-theme">
                             {theme}
                             {!ex && r.secondary_themes?.length > 0 && (
-                              <span className="sec-themes"> +{r.secondary_themes.join(", ")}</span>
+                              <span className="sec-themes"> + {r.secondary_themes.join(", ")}</span>
                             )}
                           </td>
                           <td><span className={`pill ${r.sentiment}`}>{r.sentiment}</span></td>

@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from collections import Counter
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pipeline import discover_themes, classify_comment
+from pipeline import discover_themes, classify_comment, client, MODEL
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 from math import sqrt
@@ -20,7 +20,28 @@ app.add_middleware(
 )
 
 # below this, or "Other" category, flag for review
-REVIEW_THRESHOLD = 0.6 
+REVIEW_THRESHOLD = 0.6
+
+
+def review_flag(conf, fit, primary):
+    """Decide whether a row needs human review, and record WHY.
+
+    conf = certainty of the primary theme *among the offered options*.
+    fit  = how well the comment actually matches that theme in absolute terms.
+    The confident-but-wrong case (a comment forced into the nearest theme when
+    none truly fits) shows up as high conf + low fit — that is exactly what the
+    fit gate is here to catch, since confidence alone won't.
+    Returns (needs_review: bool, reason: str).
+    """
+    reasons = []
+    if primary == "Other":
+        reasons.append("no theme matched")
+    if conf < REVIEW_THRESHOLD:
+        reasons.append(f"low confidence {conf:.2f}")
+    if fit < 0.6:
+        reasons.append(f"low fit {fit:.2f}")
+    return (len(reasons) > 0, "; ".join(reasons))
+
 
 def detect_column_roles(df):
     """Classify each column as text / categorical / date / id / numeric
@@ -29,12 +50,12 @@ def detect_column_roles(df):
     n = len(df)
     for col in df.columns:
         s = df[col].dropna()
-        if len(s) == 0: 
+        if len(s) == 0:
             roles.append({"name": col, "role": "skip", "reason": "empty"})
             continue
 
         nunique = s.nunique()
-      
+
         is_date = False
         try:
             pd.to_datetime(s.astype(str), errors="raise", format="mixed")
@@ -57,7 +78,7 @@ def detect_column_roles(df):
             role, reason = "text", "long free-text — good to analyze"
         else:
             role, reason = "ambiguous", "unclear — short labels or mixed"
-        
+
         roles.append({"name": col, "role": role, "reason": reason,
                       "avg_len": round(avg_len, 1), "nunique": int(nunique)})
     return roles
@@ -76,8 +97,8 @@ def ai_disambiguate(df, col):
         ans = resp.choices[0].message.content.strip().lower()
         return "categorical" if "categor" in ans else "text"
     except Exception:
-        return "categorical" # safe default
-            
+        return "categorical"  # safe default
+
 
 def pick_text_column(df):
     """Pick the most likely text column from a dataframe."""
@@ -91,11 +112,11 @@ def pick_text_column(df):
             return lower[name]
 
     # 2. Otherwise, pick the column with the longest average text
-    text_cols = df.select_dtypes(include="object").columns # give all cols that contain text, not numbers
-    
+    text_cols = df.select_dtypes(include="object").columns  # give all cols that contain text, not numbers
+
     if len(text_cols) == 0:
         raise ValueError("No text columns found in CSV.")
-   
+
     avg_lengths = {c: df[c].dropna().astype(str).str.len().mean() for c in text_cols}
     return max(avg_lengths, key=avg_lengths.get)
 
@@ -125,13 +146,13 @@ def read_csv_robust(raw):
     # Layer 2: one comment per line
     text = raw.decode("utf-8", errors="ignore")
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    
+
     if lines and len(lines[0]) < 40 and " " not in lines[0]:
         lines = lines[1:]   # drop a header-looking first line
 
     import re
     lines = [re.sub(r'^(\s*\d+\s*,\s*)+', '', l) for l in lines]
-    
+
     return pd.DataFrame({"text": lines}), False
 
 def parse_period(filename, idx):
@@ -233,8 +254,8 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
     dataframe, parsed_cleanly = read_csv_robust(raw)
     if dataframe is None or len(dataframe) == 0:
         return {"error": "Could not read this file. Please upload a CSV or Excel file."}
-    
-    # Pick the text column: use the one requested, else auto-detect 
+
+    # Pick the text column: use the one requested, else auto-detect
     # Check if the user actually provided column name & if that column actually exists in CSV
     try:
         text_col = pick_text_column(dataframe) if not (column and column in dataframe.columns) else column
@@ -256,26 +277,31 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
         kept[segmentable]
         .fillna("(missing)")
         .astype(str)
-        .to_dict(orient="records") 
+        .to_dict(orient="records")
     ) if segmentable else []
 
     if len(comments) == 0:
         return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
 
-    n = max(3, min(6, len(comments) // 2)) # scale theme count to data size
+    n = max(3, min(6, len(comments) // 2))  # scale theme count to data size
     themes = discover_themes(comments, n_themes=n, context=context)
 
     def classify_one(c):
         r = classify_comment(c, themes)
         conf = r.get("confidence", 0.5)
+        fit = r.get("fit", 0.5)
         primary = r.get("primary_theme", r.get("theme", "Other"))
+        needs, reason = review_flag(conf, fit, primary)
         return {
             "comment": c,
             "theme": primary,
             "secondary_themes": r.get("secondary_themes", []),
             "sentiment": r["sentiment"],
             "confidence": conf,
-            "needs_review": conf < REVIEW_THRESHOLD or primary == "Other",
+            "fit": fit,                    # now surfaced so the export/dashboard can show it
+            "needs_review": needs,
+            "review_reason": reason,       # human-readable why-flagged
+            "suggested_theme": r.get("suggested_theme", ""),
         }
 
     # Run up to 10 classifications concurrently, preserving input order
@@ -289,7 +315,7 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
     theme_counts = {t: 0 for t in themes}
     for r in results:
         theme_counts[r["theme"]] = theme_counts.get(r["theme"], 0) + 1
-    
+
     # Mention counts (primary + secondary), counts each mention, sums to > N
     mention_counts = {t: 0 for t in themes}
     for r in results:
@@ -351,7 +377,7 @@ async def analyze_stream(file: UploadFile = File(...), column: str = None):
 
     def event_stream():
         # 1. Discover themes (once)
-        n = max(2, min(6, len(comments) // 3)) # scale theme count to data size
+        n = max(2, min(6, len(comments) // 3))  # scale theme count to data size
         themes = discover_themes(comments, n_themes=n)
 
         yield sse({"type": "themes", "themes": themes,
@@ -363,12 +389,18 @@ async def analyze_stream(file: UploadFile = File(...), column: str = None):
         for i, c in enumerate(comments):
             r = classify_comment(c, themes)
             conf = r.get("confidence", 0.5)
+            fit = r.get("fit", 0.5)
+            # FIX: classify_comment returns "primary_theme", not "theme"
+            primary = r.get("primary_theme", r.get("theme", "Other"))
+            needs, reason = review_flag(conf, fit, primary)
             row = {
                 "comment": c,
-                "theme": r["theme"],
+                "theme": primary,
                 "sentiment": r["sentiment"],
                 "confidence": conf,
-                "needs_review": conf < REVIEW_THRESHOLD or r["theme"] == "Other",
+                "fit": fit,
+                "needs_review": needs,
+                "review_reason": reason,
             }
             results.append(row)
             yield sse({"type": "progress", "done": i + 1, "total": len(comments), "row": row})
@@ -405,16 +437,16 @@ async def analyze_trend(files: List[UploadFile] = File(...)):
 
         if df is None or len(df) == 0:
             return {"error": f"Could not read '{f.filename}'."}
-        
+
         try:
             text_col = pick_text_column(df)
         except ValueError:
             return {"error": f"No text column found in '{f.filename}'."}
-        
+
         comments = df[text_col].dropna().astype(str).tolist()
         if not comments:
             return {"error": f"No comments found in '{f.filename}'."}
-        
+
         order, name = parse_period(f.filename, idx)
         periods.append({"order": order, "name": name, "comments": comments,
                         "clean_parse": clean})
@@ -436,7 +468,7 @@ async def analyze_trend(files: List[UploadFile] = File(...)):
             "theme": r.get("primary_theme", r.get("theme", "Other")),
             "sentiment": r["sentiment"],
         }
-    
+
     out_periods = []
     for p in periods:
         with ThreadPoolExecutor(max_workers=10) as pool:
@@ -484,7 +516,7 @@ async def analyze_trend(files: List[UploadFile] = File(...)):
 
         p = two_proportion_p(c1, first["total"], c2, last["total"])
 
-        too_few = (c1 + c2) < 5 
+        too_few = (c1 + c2) < 5
 
         significance[t] = {
             "p_value": p,
@@ -495,7 +527,7 @@ async def analyze_trend(files: List[UploadFile] = File(...)):
     n_tested = len(all_themes)
 
     return {
-        "themes": themes, 
+        "themes": themes,
         "periods": out_periods,
         "significance": significance,
         "n_tested": n_tested,
@@ -511,14 +543,14 @@ def two_proportion_p(c1, n1, c2, n2):
     """Two-sided z-test for difference in proportions. Return p-value"""
     if n1 == 0 or n2 == 0:
         return None
-    
+
     p1, p2 = c1 / n1, c2 / n2
     pool = (c1 + c2) / (n1 + n2)
     se = sqrt(pool * (1 - pool) * (1 / n1 + 1 / n2))
 
     if se == 0:
         return 1.0
-    
+
     z = (p1 - p2) / se
 
     from math import erf
