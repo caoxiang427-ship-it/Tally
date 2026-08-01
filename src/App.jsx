@@ -3,7 +3,7 @@ import "./App.css";
 import { LayoutGrid, BarChart3, Sigma, Upload } from "lucide-react";
 import tallyLogo from './assets/tally_icon.png';
 
-const API = "http://127.0.0.1:8000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
 const COLORS = { negative: "#f43f5e", positive: "#10b981", neutral: "#B4B2A9" };
 const EXCLUDED = "__excluded__";
 
