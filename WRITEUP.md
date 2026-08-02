@@ -40,13 +40,11 @@ Classification performance is evaluated against human-labelled ground truth. Sen
 
 The system's limitations are explicit. Tally analyses one text column and one segmentation dimension at a time. User corrections update the dashboard and exports but are session-only. Trend analysis compares uploaded datasets rather than continuously monitoring incoming data. Z-score anomaly detection cannot identify a perfectly stable theme that suddenly spikes, because a near-zero baseline variance makes the statistic undefined; the complementary two-proportion significance test detects these cases.
 
-With two more weeks, the priorities would be, in order: formally evaluating the multi-label predictions, extending the evaluation to the full CFPB taxonomy, and re-running it on a second, non-financial domain to test whether the approach generalises. Secondary work includes persisting user corrections, applying multiple-comparison corrections, and improving run-to-run consistency.
+Future iterations should focus on: formally evaluating the multi-label predictions, extending the evaluation to the full CFPB taxonomy, and re-running it on a second, non-financial domain to test whether the approach generalises, persisting user corrections, applying multiple-comparison corrections, and improving run-to-run consistency.
 
 ---
 
 ## Appendix
-
-*Appendices do not count toward the 1,000-word limit.*
 
 ### Table 1: Accuracy vs. human labels
 
