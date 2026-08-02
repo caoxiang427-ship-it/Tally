@@ -40,7 +40,7 @@ Classification performance is evaluated against human-labelled ground truth. Sen
 
 The system's limitations are explicit. Tally analyses one text column and one segmentation dimension at a time. User corrections update the dashboard and exports but are session-only. Trend analysis compares uploaded datasets rather than continuously monitoring incoming data. Z-score anomaly detection cannot identify a perfectly stable theme that suddenly spikes, because a near-zero baseline variance makes the statistic undefined; the complementary two-proportion significance test detects these cases.
 
-Given two more weeks, priorities would be: formally evaluating the multi-label, fit, and exclusion predictions; extending the evaluation to the full CFPB taxonomy; and re-running it on a second, non-financial domain. Further work: persisting user corrections, applying multiple-comparison corrections, and improving run-to-run consistency.
+Future work would be: formally evaluating the multi-label, fit, and exclusion predictions; extending the evaluation to the full CFPB taxonomy; re-running it on a second, non-financial domain; persisting user corrections; applying multiple-comparison corrections; and improving run-to-run consistency.
 
 ---
 
@@ -94,5 +94,5 @@ Given two more weeks, priorities would be: formally evaluating the multi-label, 
 - **Sample:** 360 complaints, 6 balanced categories
 - **Seed:** fixed (`SEED=42`)
 - **Temperature:** 0 (both passes)
-- **Model:** _[exact model string used for the Table 1 evaluation — keep consistent with the repo]_
+- **Model:** gpt-5.4-mini
 - **Repository:** https://github.com/caoxiang427-ship-it/Tally
