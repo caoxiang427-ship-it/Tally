@@ -83,6 +83,4 @@ Future iterations should focus on: formally evaluating the multi-label predictio
 - **Sample:** 360 complaints, 6 balanced categories
 - **Seed:** fixed (`SEED=42`)
 - **Temperature:** 0 (both passes)
-- **Evaluation model (Table 1 figures):** _[exact model string, the one that produced these numbers]_
-- **Deployed model (current production):** _[exact model string, if different from the evaluation model]_
 - **Repository:** https://github.com/caoxiang427-ship-it/Tally
