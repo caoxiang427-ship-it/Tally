@@ -283,3 +283,26 @@
   border: 1px solid #bfdbfe;
   line-height: 1.2;
 }
+
+.tbl {
+  width: 100%;
+  table-layout: fixed;      
+  border-collapse: collapse;
+}
+
+.tbl th, .tbl td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tbl .c-comment {
+  width: 40%;
+  white-space: normal;      
+}
+
+.tbl .c-conf, .tbl .c-conf-h {
+  width: 56px;
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 12px;
+}

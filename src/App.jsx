@@ -474,7 +474,7 @@ export default function App() {
                     <div className="review-comment">{r.comment}</div>
                     <div className="review-controls">
                       <span className="conf-badge">
-                        {r.theme === "Other" ? "no theme matched" : `low conf ${r.confidence?.toFixed(2)}`}
+                        {r.review_reason || (r.theme === "Other" ? "no theme matched" : `conf ${r.confidence?.toFixed(2)}`)}
                       </span>
                       <select
                         value={selected}
@@ -543,7 +543,7 @@ export default function App() {
             ) : (
               <>
                 <table className="tbl">
-                    <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th></tr></thead>
+                    <thead><tr><th>Comment</th><th>Theme</th><th>Sentiment</th><th className="c-conf-h">Conf.</th><th className="c-conf-h">Fit</th></tr></thead>
                 <tbody>
                     {filtered.slice(0, visibleCount).map(({ r, i }) => {
                       const ex = corrections[i] === EXCLUDED;
@@ -561,6 +561,9 @@ export default function App() {
                           <td className="c-conf" style={{ color: r.confidence < 0.6 ? "#854F0B" : "#27500A" }}>
                             {r.confidence?.toFixed(2)}
                           </td>
+                          <td className="c-conf" style={{ color: r.fit < 0.6 ? "#854F0B" : "#27500A" }}>
+                            {r.fit?.toFixed(2)}
+                          </td>
                         </tr>
                       );
                     })}
@@ -572,9 +575,16 @@ export default function App() {
                     Show 20 more ({filtered.length - visibleCount} remaining)
                   </button>
                 )}
+
+                <p className="illustrative">
+                  <b>Conf.</b> = how sure the model is this is the best theme among the options.
+                  <b> Fit</b> = how well the comment actually matches that theme. A high-confidence,
+                  low-fit row is one the model was forced to label when nothing fit well — worth a review.
+                </p>
               </>
             )}
           </section>
+
 
           {data.segmentable_columns?.length > 0 && (
             <section className="card">
@@ -1202,7 +1212,7 @@ function derive(data, corrections) {
 // For user to export the results as a CSV file
 function exportCSV(results, corrections) {
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const header = "comment,primary_theme,secondary_themes,sentiment,confidence,status";
+  const header = "comment,primary_theme,secondary_themes,sentiment,confidence,fit,status";
   const rows = results.map((r, i) => {
     const c = corrections[i];
     const excluded = c === EXCLUDED;
@@ -1213,6 +1223,7 @@ function exportCSV(results, corrections) {
       esc(excluded ? "" : (r.secondary_themes || []).join("; ")),
       esc(r.sentiment),
       esc(r.confidence?.toFixed(2) ?? ""),
+      esc(r.fit?.toFixed(2) ?? ""),
       esc(excluded ? "excluded" : corrected ? "human_corrected" : "model"),
     ].join(",");
   });
