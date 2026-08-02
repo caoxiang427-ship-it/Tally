@@ -22,7 +22,7 @@ Traditional supervised classifiers, such as TF-IDF-based models, require labelle
 
 Success criteria were pre-registered and committed to version control before any evaluation was performed, ensuring that performance targets could not be adjusted after results were known. Evaluation used the public CFPB Consumer Complaint Database, comprising 360 complaints evenly distributed across 6 categories, with a fixed random seed for reproducibility.
 
-Compared with the supervised TF-IDF baseline, Tally is competitive rather than superior. TF-IDF achieves a higher Macro-F1 score, while Tally achieves a higher Cohen's κ despite requiring no labelled training data. Its κ of 0.827 falls within the "almost perfect" agreement range on the Landis–Koch scale and exceeds the pre-registered success threshold. Across three runs at temperature 0, classifications were approximately 97–98% identical, with disagreements concentrated on genuinely category-spanning complaints rather than random variation. Tally assigned "Other" to only 0.8% of cases, all of which manual inspection confirmed as genuine edge cases outside the fixed taxonomy, representing deliberate abstention rather than misclassification.
+Compared with the supervised TF-IDF baseline, Tally is competitive rather than superior. TF-IDF achieves a higher Macro-F1 score, while Tally achieves a higher Cohen's κ despite requiring no labelled training data. Its κ of 0.827 falls within the "almost perfect" agreement range on the Landis–Koch scale and exceeds the pre-registered threshold (κ ≥ 0.61). Across three runs at temperature 0, classifications were approximately 97–98% identical, with disagreements concentrated on genuinely category-spanning complaints rather than random variation. Tally assigned "Other" to only 0.8% of cases, all of which manual inspection confirmed as genuine edge cases outside the fixed taxonomy, representing deliberate abstention rather than misclassification.
 
 This issue-versus-product mismatch is why a fair comparison required the fixed-category bypass, isolating classification accuracy from discovery quality. The statistical analyses introduced later (the two-proportion z-test, chi-square test, and standardised residuals) were implemented without SciPy and verified against its reference implementations, matching within 0.0002. Sentiment labels are generated for every comment but presented for illustrative purposes only, as no labelled sentiment ground truth is available and no claim of sentiment accuracy is made.
 
@@ -36,7 +36,7 @@ The evaluation was intentionally scoped to 6 of the approximately 20 CFPB catego
 
 ## Honesty and Trajectory
 
-Classification performance is evaluated against human-labelled ground truth. Sentiment and multi-label outputs are included but not formally evaluated. Domain context steers discovery, but its accuracy impact is likewise unmeasured, since testing it would require re-running the evaluation with and without context. The reported accuracy figures were measured on the evaluation model; the deployed model has since been updated, and re-evaluation on it is pending. The statistical methods are verified for implementation correctness rather than empirical ground truth; their contribution lies in careful application: flagging small samples, greying out segments with fewer than twenty responses, disclosing the risk of false positives when testing multiple themes, and declining to compute period anomalies with fewer than four periods.
+Classification performance is evaluated against human-labelled ground truth. Sentiment and multi-label outputs are included but not formally evaluated. Domain context steers discovery, but its accuracy impact is likewise unmeasured, since testing it would require re-running the evaluation with and without context. The statistical methods are verified for implementation correctness rather than empirical ground truth; their contribution lies in careful application: flagging small samples, greying out segments with fewer than twenty responses, disclosing the risk of false positives when testing multiple themes, and declining to compute period anomalies with fewer than four periods.
 
 The system's limitations are explicit. Tally analyses one text column and one segmentation dimension at a time. User corrections update the dashboard and exports but are session-only. Trend analysis compares uploaded datasets rather than continuously monitoring incoming data. Z-score anomaly detection cannot identify a perfectly stable theme that suddenly spikes, because a near-zero baseline variance makes the statistic undefined; the complementary two-proportion significance test detects these cases.
 
@@ -45,6 +45,17 @@ Future iterations should focus on: formally evaluating the multi-label predictio
 ---
 
 ## Appendix
+
+### Repository guide
+- `backend/pipeline.py` — the two-pass theme-discovery and classification pipeline (the core method).
+- `backend/api.py` — FastAPI endpoints, robust CSV parsing, parallel classification, and the statistical tests (chi-square, two-proportion z-test, standardised residuals, anomaly z-scores).
+- `backend/SUCCESS_CRITERIA.md` — success criteria, pre-registered before evaluation.
+- `backend/RESULTS.md` — evaluation methodology and the measured results behind the accuracy claims.
+- `backend/STATS_VERIFICATION.md` — hand-implemented statistics verified against scipy.
+- `src/App.jsx` — dashboard, review queue, segment analysis, and trend analysis.
+- `LIMITATIONS.md` — known limitations and next steps.
+- `failures.md` — running log of issues found and how they were handled.
+- `WRITEUP.md` — the five-pillar write-up.
 
 ### Table 1: Accuracy vs. human labels
 
@@ -61,7 +72,7 @@ Future iterations should focus on: formally evaluating the multi-label predictio
 
 | | Production model | Frontier model | Manual coding |
 |---|---|---|---|
-| Cost | ~$0.38 | ~$1.25 (3.3×) | ~$100–240 |
+| Cost | ~$0.38 | ~$1.26 (3.3×) | ~$100–240 |
 | Latency (sequential) | ~18 min | n/a | 4–8 hours |
 | Latency (parallelised) | 200 comments in 37 s (from ~3 min) | n/a | n/a |
 
@@ -71,11 +82,11 @@ Future iterations should focus on: formally evaluating the multi-label predictio
 
 | Method | Verified against | Max absolute difference |
 |---|---|---|
-| Two-proportion z-test | SciPy reference implementation | < 0.0002 |
-| Chi-square test of independence | SciPy reference implementation | < 0.0002 |
-| Standardised residuals | SciPy reference implementation | < 0.0002 |
+| erf (normal CDF) | SciPy `scipy.special.erf` | ~1e-7 |
+| Two-proportion z-test | SciPy reference | exact to 4 dp (0.0000) |
+| Chi-square test of independence | SciPy `chi2_contingency` | < 0.0002 |
 
-*All three were implemented from scratch (no SciPy dependency) and cross-checked against SciPy on the evaluation data.*
+*Implemented from scratch (no SciPy dependency) and cross-checked against SciPy on constructed test cases.*
 
 ### Reproducibility
 
