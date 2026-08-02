@@ -86,6 +86,45 @@ def discover_themes(comments, n_themes=6, context=None, n_samples=3, sample_size
     text = text.replace("```json", "").replace("```", "").strip()
     return json.loads(text)
 
+def discover_secondary_themes(comments, existing_themes, n_extra=3, context=None):
+    """Second-pass discovery over comments that didn't fit the main themes.
+    Clusters them as a GROUP, so related comments share one broad theme
+    (prevents 'App crash' / 'App stability' / 'app usability' fragmentation)."""
+
+    if not comments or n_extra < 1:
+        return []
+    
+    sample = "\n".join(f"- {c}" for c in comments[:150])
+    context_line = f"These are feedback comments about: {context}.\n\n" if context else ""
+    existing = ", ".join(f'"{t}"' for t in existing_themes)
+    
+    prompt = (
+        f"{context_line}"
+        f"These feedback comments did NOT fit any existing theme in [{existing}]:\n\n{sample}\n\n"
+        f"Identify up to {n_extra} ADDITIONAL recurring themes that cover these comments. "
+        "Each must be a BROAD, NEUTRAL topic (2-4 words) shared by SEVERAL comments, "
+        "not a label for a single comment. Do NOT duplicate or rename the existing themes. "
+        "Ignore one-off or contentless comments. "
+        "Return ONLY a JSON array of theme names, no explanation."
+    )
+
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL, messages=[{"role": "user", "content": prompt}], temperature=0)
+        text = resp.choices[0].message.content.strip().replace("```json", "").replace("```", "").strip()
+        out = json.loads(text)
+    except Exception:
+        return []
+    
+    seen = {t.lower() for t in existing_themes}
+    result = []
+    for t in out:
+        if isinstance(t, str) and t.lower() not in seen:
+            seen.add(t.lower())
+            result.append(t)
+
+    return result[:n_extra]
+
 def classify_comment(comment, themes):
     """Pass 2: assign a primary theme (+ optional secondary themes), sentiment, confidence, fit."""
     theme_list = ", ".join(f'"{t}"' for t in themes)
@@ -109,6 +148,11 @@ def classify_comment(comment, themes):
         "Give \"fit\" (0.0-1.0): how well the comment actually matches that theme in absolute "
         "terms — a comment shoved into the closest-but-imperfect theme should score LOW fit "
         "even if confidence is high. "
+        "Also return \"usable\" (true/false): set FALSE only if the comment is not genuine "
+        "customer feedback — empty, a placeholder/test string, gibberish, or contentless filler "
+        "with no opinion or information (e.g. \"ok\", \"meh\", \"n/a\", \"idk\", \"no comment\", \"-\"). "
+        "A short reaction that still carries sentiment (e.g. \"love it\", \"great\", \"terrible\", "
+        "\"yum\") IS usable feedback. Default true. "
         "Return ONLY JSON like: {\"primary_theme\": \"...\", "
         "\"secondary_themes\": [\"...\"], \"sentiment\": \"...\", "
         "\"confidence\": 0.0, \"fit\": 0.0}"
@@ -122,6 +166,7 @@ def classify_comment(comment, themes):
         "sentiment": "neutral",
         "confidence": 0.5,
         "fit": 0.5,
+        "usable": True,
     }
 
     try:
@@ -156,7 +201,7 @@ def classify_comment(comment, themes):
             result[key] = max(0.0, min(1.0, v))
         except (TypeError, ValueError):
             result[key] = 0.5
-
+    result["usable"] = bool(result.get("usable", True))
     return result
 
 def get_themes(comments, fixed_themes=None, n_themes=6):

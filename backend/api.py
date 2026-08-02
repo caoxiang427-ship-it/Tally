@@ -9,6 +9,7 @@ from pipeline import discover_themes, classify_comment, client, MODEL
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 from math import sqrt
+from pipeline import discover_themes, discover_secondary_themes, classify_comment, client, MODEL
 
 app = FastAPI()
 
@@ -38,7 +39,7 @@ def review_flag(conf, fit, primary):
         reasons.append("no theme matched")
     if conf < REVIEW_THRESHOLD:
         reasons.append(f"low confidence {conf:.2f}")
-    if fit < 0.6:
+    if fit < 0.6 and primary != "Other":   # fit only meaningful for a real theme
         reasons.append(f"low fit {fit:.2f}")
     return (len(reasons) > 0, "; ".join(reasons))
 
@@ -246,17 +247,13 @@ async def detect_columns(file: UploadFile = File(...)):
         "default_text": default_text,
     }
 
-
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...), column: str = None, context: str = None):
     raw = await file.read()
-
     dataframe, parsed_cleanly = read_csv_robust(raw)
     if dataframe is None or len(dataframe) == 0:
         return {"error": "Could not read this file. Please upload a CSV or Excel file."}
 
-    # Pick the text column: use the one requested, else auto-detect
-    # Check if the user actually provided column name & if that column actually exists in CSV
     try:
         text_col = pick_text_column(dataframe) if not (column and column in dataframe.columns) else column
     except ValueError as e:
@@ -264,7 +261,6 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
 
     comments = dataframe[text_col].dropna().astype(str).tolist()
 
-    # Keep non-text columns aligned to the rows we kept, for segmentation
     kept = dataframe.dropna(subset=[text_col]).reset_index(drop=True)
     segmentable = []
     for c in kept.columns:
@@ -273,64 +269,78 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
         nunique = kept[c].nunique(dropna=True)
         if 2 <= nunique <= 15 and nunique < len(kept):
             segmentable.append(c)
-    metadata = (
-        kept[segmentable]
-        .fillna("(missing)")
-        .astype(str)
-        .to_dict(orient="records")
-    ) if segmentable else []
+    metadata = (kept[segmentable].fillna("(missing)").astype(str).to_dict(orient="records")) if segmentable else []
 
     if len(comments) == 0:
         return {"error": "No comments found. The file appears to be empty or has no text in the detected column."}
 
-    n = max(3, min(6, len(comments) // 2))  # scale theme count to data size
-    themes = discover_themes(comments, n_themes=n, context=context)
+    # --- Pass 1: main themes ---
+    n_main = max(4, min(8, len(comments) // 12))
+    main_themes = discover_themes(comments, n_themes=n_main, context=context)
 
-    def classify_one(c):
-        r = classify_comment(c, themes)
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        results = list(pool.map(lambda c: classify_comment(c, main_themes), comments))
+
+    # Re-cluster ALL usable Other rows (fit is unreliable for the Other bucket; trust the
+    # model's own "usable" judgment instead of a fit threshold).
+    unmatched_idx = [i for i, r in enumerate(results)
+                     if r.get("primary_theme") == "Other" and r.get("usable", True)]
+    unmatched = [comments[i] for i in unmatched_idx]
+
+    n_extra = min(4, len(set(unmatched)) // 4)
+    secondary_themes = discover_secondary_themes(unmatched, main_themes, n_extra=n_extra, context=context)
+    all_themes = main_themes + secondary_themes
+
+    if secondary_themes and unmatched_idx:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            reclassed = list(pool.map(lambda c: classify_comment(c, all_themes), unmatched))
+        for j, i in enumerate(unmatched_idx):
+            r = reclassed[j]
+            if r.get("primary_theme") != "Other":   # only overwrite if it now fits a real theme
+                results[i] = r
+
+    # --- Build rows ---
+    out = []
+    for i, r in enumerate(results):
         conf = r.get("confidence", 0.5)
         fit = r.get("fit", 0.5)
-        primary = r.get("primary_theme", r.get("theme", "Other"))
+        primary = r.get("primary_theme", "Other")
+        usable = r.get("usable", True)
+        suggest_exclude = (primary == "Other" and not usable)
         needs, reason = review_flag(conf, fit, primary)
-        return {
-            "comment": c,
+        out.append({
+            "comment": comments[i],
             "theme": primary,
             "secondary_themes": r.get("secondary_themes", []),
             "sentiment": r["sentiment"],
             "confidence": conf,
-            "fit": fit,                    # now surfaced so the export/dashboard can show it
+            "fit": fit,
             "needs_review": needs,
-            "review_reason": reason,       # human-readable why-flagged
+            "review_reason": "not usable feedback" if suggest_exclude else reason,
+            "suggest_exclude": suggest_exclude,
             "suggested_theme": r.get("suggested_theme", ""),
-        }
+            "meta": metadata[i] if i < len(metadata) else {},
+        })
 
-    # Run up to 10 classifications concurrently, preserving input order
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        results = list(pool.map(classify_one, comments))
+    theme_counts = {t: 0 for t in all_themes}
+    for r in out:
+        if r["theme"] in theme_counts:
+            theme_counts[r["theme"]] += 1
 
-    for i, r in enumerate(results):
-        r["meta"] = metadata[i] if i < len(metadata) else {}
-
-    # Primary counts (each comment counts once), drives the chart, sums to N
-    theme_counts = {t: 0 for t in themes}
-    for r in results:
-        theme_counts[r["theme"]] = theme_counts.get(r["theme"], 0) + 1
-
-    # Mention counts (primary + secondary), counts each mention, sums to > N
-    mention_counts = {t: 0 for t in themes}
-    for r in results:
+    mention_counts = {t: 0 for t in all_themes}
+    for r in out:
         for t in [r["theme"]] + r.get("secondary_themes", []):
-            mention_counts[t] = mention_counts.get(t, 0) + 1
+            if t in mention_counts:
+                mention_counts[t] += 1
 
-    sentiment_counts = Counter(r["sentiment"] for r in results)
-
+    sentiment_counts = Counter(r["sentiment"] for r in out)
     examples = {}
-    for r in results:
+    for r in out:
         examples.setdefault(r["theme"], [])
         if len(examples[r["theme"]]) < 2:
             examples[r["theme"]].append(r["comment"])
-
-    review_count = sum(1 for r in results if r["needs_review"])
+    review_count = sum(1 for r in out if r["needs_review"])
+    exclude_count = sum(1 for r in out if r["suggest_exclude"])
 
     import math
     def clean_nan(obj):
@@ -343,18 +353,22 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
         return obj
 
     return clean_nan({
-        "total": len(results),
+        "total": len(out),
         "context": context or "",
         "text_column": text_col,
         "segmentable_columns": segmentable,
         "clean_parse": parsed_cleanly,
-        "themes": themes,
+        "themes": all_themes,          # main + secondary, no "Other"
+        "main_themes": main_themes,
+        "secondary_themes": secondary_themes,
+        "primary_top_n": n_main,       # chart shows this many top themes
         "theme_counts": dict(theme_counts),
         "mention_counts": dict(mention_counts),
         "sentiment_counts": dict(sentiment_counts),
         "examples": examples,
-        "results": results,
+        "results": out,
         "review_count": review_count,
+        "exclude_count": exclude_count,
     })
 
 @app.post("/analyze_stream")

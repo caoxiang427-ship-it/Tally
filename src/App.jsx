@@ -376,7 +376,7 @@ export default function App() {
               </div>
 
               {view === "primary" ? (
-                d.primaryRows.map((t) => {
+                d.primaryRows.slice(0, data.primary_top_n || d.primaryRows.length).map((t) => {
                   const s = sentimentSplit(data.results, t.theme, corrections);
                   return (
                     <div
@@ -452,22 +452,20 @@ export default function App() {
               {data.results.map((r, i) => {
                 if (!r.needs_review) return null;
 
-                // AI suggestion becomes the default ONLY for unmatched rows; a human pick always wins.
-                const aiDefault =
-                  r.theme === "Other" && r.suggested_theme ? r.suggested_theme : r.theme;
+                // Default: suggest exclude for junk; else the AI-suggested theme; else its theme.
+                const aiDefault = r.suggest_exclude
+                  ? EXCLUDED
+                  : (r.theme === "Other" && r.suggested_theme ? r.suggested_theme : r.theme);
                 const selected = corrections[i] ?? aiDefault;
 
-                // The suggested theme may not be in the discovered set (e.g. "Packaging waste"
-                // when it wasn't discovered) — make sure it's still a selectable option.
+                // Keep an off-list suggested theme selectable.
                 const baseOptions = [...data.themes, "Other"];
                 const options =
-                  r.suggested_theme && !baseOptions.includes(r.suggested_theme)
+                  r.suggested_theme && !r.suggest_exclude && !baseOptions.includes(r.suggested_theme)
                     ? [...data.themes, r.suggested_theme, "Other"]
                     : baseOptions;
 
-                // True when the shown value is an AI default the human hasn't confirmed yet.
-                const isAiSuggested =
-                  corrections[i] == null && r.theme === "Other" && selected === r.suggested_theme;
+                const untouched = corrections[i] == null;
 
                 return (
                   <div className={`review-row ${corrections[i] === EXCLUDED ? "is-excluded" : ""}`} key={i}>
@@ -487,7 +485,9 @@ export default function App() {
                       {corrections[i] && corrections[i] !== EXCLUDED && corrections[i] !== aiDefault && (
                         <span className="corrected-tag">corrected</span>
                       )}
-                      {isAiSuggested && <span className="suggested">AI-suggested · unconfirmed</span>}
+                      {untouched && (r.suggest_exclude || (r.theme === "Other" && r.suggested_theme)) && (
+                        <span className="suggested">AI suggested</span>
+                      )}
                     </div>
                   </div>
                 );
@@ -1192,7 +1192,7 @@ function derive(data, corrections) {
 
   const toRows = (obj) => Object.entries(obj)
     .map(([theme, count]) => ({ theme, count }))
-    .filter(t => t.count > 0)
+    .filter(t => t.count > 0 && t.theme !== "Other")
     .sort((a, b) => b.count - a.count);
 
   const excludedCount = data.results.filter((_, i) => isEx(i)).length;
