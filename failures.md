@@ -244,3 +244,40 @@ with "(missing)" before serialisation. Added a recursive check to replace any re
 the response. This issue only surfaced when testing with a deliberately messy dataset, as clean datasets 
 contained no missing values.
 
+## Day 13 - Theme coverage, exclusion, and the "Other" bucket
+
+### [Finding] Theme count is a lever; setting it too low collapses real structure into "Other"
+
+On a 100-row meal-kit dataset containing roughly 10 real topics, `n_themes` capped at 6 pushed four genuine topics (Portion size, App experience, Recipe instructions, Convenience) into "Other," which became the largest bucket (33 of 99). This is not misclassification but honest abstention bounded by the discovered theme list: with no home for those topics, the model correctly declines rather than forcing a weak label.
+
+**Fix:** Raised the adaptive ceiling to `n = max(4, min(8, len // 12))` so minor-but-real themes surface. "Other" fell from 33 to ~9, and Portion size / App usability appeared as their own themes. Theme count is now understood as a tunable trade-off, not a fixed constant.
+
+### [Fixed] Exclusion driven by `fit` mis-excluded real feedback
+
+A rule flagging "Other" rows with `fit < 0.5` as "not feedback" inverted the correct answer: genuine reactions ("LOVE IT", "Great!", "so convenient for our busy week") were flagged for exclusion, while contentless rows ("no comment", "no strong feelings either way") with `fit` of 0.99-1.0 were kept.
+
+**Root cause:** `fit` is meaningless for the "Other" bucket. "How well does this match *Other*" has no consistent interpretation, so the model returns noise. `fit` is only interpretable against a concrete theme.
+
+**Fix:** Replaced the `fit` heuristic with an explicit model-judged `usable` flag, set false only for empty, test, gibberish, or contentless filler ("ok", "meh", "idk", "-"); a short reaction that still carries sentiment stays usable. Exclusion now keys on `usable`, decoupled from `fit`.
+
+### [Finding] Confidence measures best-among-options, not correctness
+
+"way too many pans and steps for a 'quick' 30 min meal, took me an hour" (about cook time) was labelled **Delivery speed** at 0.95 confidence: confidently wrong, because the correct topic was not among the offered themes. Confidence reflects the best available option, not absolute correctness.
+
+**Response:** Added a separate `fit` score measuring absolute match. A forced label now reads high confidence with low fit, and the review queue flags on `fit`, surfacing confident-but-wrong cases that confidence alone concealed.
+
+### [Fixed] Per-comment suggestions fragmented into micro-themes
+
+Generating a theme suggestion independently for each unmatched comment produced "App crash", "App stability", and "app usability" as three separate topics for a single underlying App theme.
+
+**Fix:** Unmatched comments are now re-clustered by a second discovery pass that examines them **as a group** before re-classifying, rather than labelling each in isolation. Related comments share one broad theme, and genuinely contentless comments are routed to exclusion instead of seeding a one-off theme.
+
+### [Fixed] "Other" distorted the segment breakdown
+
+When the "Other" bucket was large, it became the top theme for several segments, and every chi-square and standardised-residual callout concerned "Other": statistically valid but analytically meaningless, since "Other" is not a real theme.
+
+**Fix:** "Other" is excluded from the segment contingency table and top-theme selection, so breakdowns and anomaly callouts report the strongest genuine theme per segment.
+
+
+
+
