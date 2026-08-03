@@ -80,7 +80,8 @@ seed, and model are identical.
 - The drop therefore reflects the benchmark **penalising a desirable behaviour**
   (declining to mislabel), not weaker classification. The reported figures are a
   **conservative floor**; on cases where the model commits, per-category F1 is high
-  (below). Logged transparently rather than hidden.
+  (below).
+- **The new prompt is more accurate in the real sense but scores lower on this benchmark.**
 
 ## Per-category F1 (current, Tally gpt-5.4-mini)
 | Category | F1 |
