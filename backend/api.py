@@ -287,9 +287,13 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
                      if r.get("primary_theme") == "Other" and r.get("usable", True)]
     unmatched = [comments[i] for i in unmatched_idx]
 
-    n_extra = min(4, len(set(unmatched)) // 4)
+    n_extra = min(3, len(set(unmatched)) // 5)
     secondary_themes = discover_secondary_themes(unmatched, main_themes, n_extra=n_extra, context=context)
+    
+    GENERAL_THEME = "General sentiment"
     all_themes = main_themes + secondary_themes
+    if GENERAL_THEME not in all_themes:
+        all_themes.append(GENERAL_THEME)
 
     if secondary_themes and unmatched_idx:
         with ThreadPoolExecutor(max_workers=10) as pool:
@@ -305,6 +309,8 @@ async def analyze(file: UploadFile = File(...), column: str = None, context: str
         conf = r.get("confidence", 0.5)
         fit = r.get("fit", 0.5)
         primary = r.get("primary_theme", "Other")
+        if primary == "Other":
+            r["suggested_theme"] = ""
         usable = r.get("usable", True)
         suggest_exclude = (primary == "Other" and not usable)
         needs, reason = review_flag(conf, fit, primary)

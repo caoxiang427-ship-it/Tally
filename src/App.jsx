@@ -485,8 +485,13 @@ export default function App() {
                       {corrections[i] && corrections[i] !== EXCLUDED && corrections[i] !== aiDefault && (
                         <span className="corrected-tag">corrected</span>
                       )}
-                      {untouched && (r.suggest_exclude || (r.theme === "Other" && r.suggested_theme)) && (
-                        <span className="suggested">AI suggested</span>
+                      {untouched && !r.suggest_exclude && r.theme === "Other" && r.suggested_theme && (
+                        <button
+                          className="accept-btn"
+                          onClick={() => setCorrections({ ...corrections, [i]: r.suggested_theme })}
+                        >
+                          Accept
+                        </button>
                       )}
                     </div>
                   </div>
@@ -511,12 +516,9 @@ export default function App() {
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setVisibleCount(20); }}
               />
-              {data.themes.map(t => (
-                <button
-                  key={t}
-                  className={`chip-btn ${filterTheme === t ? "on" : ""}`}
-                  onClick={() => { setFilterTheme(filterTheme === t ? null : t); setVisibleCount(20); }}
-                >{t}</button>
+              {d.primaryRows.map(({ theme: t }) => (
+                <button key={t} className={`chip-btn ${filterTheme === t ? "on" : ""}`}
+                  onClick={() => { setFilterTheme(filterTheme === t ? null : t); setVisibleCount(20); }}>{t}</button>
               ))}
               <span className="filter-sep" />
               {["negative", "positive", "neutral"].map(s => (
@@ -721,11 +723,12 @@ function segmentAnalysis(results, corrections, column) {
   // group rows by the chosen categorical value
   const groups = {};
   rows.forEach(r => {
-    const v = r.meta?.[column] ?? "(missing)";
+    const raw = r.meta?.[column] ?? "(missing)";
+    const v = String(raw).trim().replace(/\b\w/g, c => c.toUpperCase());
     (groups[v] ||= []).push(r);
   });
 
-  const allThemes = Object.keys(overall);
+  const allThemes = Object.keys(overall).filter(t => t !== "Other");
 
   // per-segment, find the top theme and its lift 
   // lift = rate here / baseline rate 
@@ -740,7 +743,7 @@ function segmentAnalysis(results, corrections, column) {
       sent[r.sentiment] = (sent[r.sentiment] || 0) + 1;
     });
 
-    const [topTheme, topCount] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0] || ["—", 0];
+    const [topTheme, topCount] = Object.entries(counts).filter(([t]) => t !== "Other").sort((a, b) => b[1] - a[1])[0] || ["—", 0];
     const segRate = topCount / n;
     const lift = overall[topTheme] ? +(segRate / overall[topTheme]).toFixed(1) : null;
 
@@ -1176,19 +1179,20 @@ function derive(data, corrections) {
   data.results.forEach((r, i) => {
     if (isEx(i)) return;
     const t = corrections[i] ?? r.theme;
+    if (t === "Other" || t === EXCLUDED) return;
     primary[t] = (primary[t] || 0) + 1;
   });
 
-  // Recount mentions using corrections
   const mention = {};
   data.themes.forEach(t => (mention[t] = 0));
   data.results.forEach((r, i) => {
     if (isEx(i)) return;
     const t = corrections[i] ?? r.theme;
+    if (t === EXCLUDED) return;
     [t, ...(r.secondary_themes || [])]
-      .forEach(x => (
-        mention[x] = (mention[x] || 0) + 1));
-      });
+      .filter(x => x && x !== "Other")
+      .forEach(x => (mention[x] = (mention[x] || 0) + 1));
+  });
 
   const toRows = (obj) => Object.entries(obj)
     .map(([theme, count]) => ({ theme, count }))
