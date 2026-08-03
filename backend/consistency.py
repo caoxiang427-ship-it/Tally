@@ -13,7 +13,7 @@ df = pd.read_csv("data/eval_set.csv").sample(n=60, random_state=42)
 runs = []
 for run in range(3):
     print(f"Run {run+1}/3...")
-    runs.append([classify_comment(t, CATEGORIES)["theme"] for t in df["text"]])
+    runs.append([classify_comment(t, CATEGORIES).get("primary_theme", "Other") for t in df["text"]])
 
 r1, r2, r3 = runs
 identical = sum(1 for a, b, c in zip(r1, r2, r3) if a == b == c)

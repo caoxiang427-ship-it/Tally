@@ -15,7 +15,7 @@ df = pd.read_csv("data/eval_set.csv")
 preds = []
 for i, text in enumerate(df["text"]):
     r = classify_comment(text, CATEGORIES)
-    preds.append(r["theme"])
+    preds.append(r.get("primary_theme", "Other"))
 
     if (i + 1) % 20 == 0:
         print(f"  {i+1}/{len(df)} done")
