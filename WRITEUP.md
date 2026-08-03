@@ -2,10 +2,6 @@
 
 **Cao Xiang · The LaunchPad Challenge**
 
-Tally turns large volumes of unlabelled open-ended feedback into structured, countable, per-comment analysis with statistical validation.
-
----
-
 ## Problem
 
 Organisations collect large volumes of open-ended feedback, making manual review increasingly impractical. Traditional text classifiers can be accurate but require labelled training data for predefined categories, whereas real-world feedback is typically unlabelled, organisation-specific, and constantly evolving. General-purpose chatbots can summarise a small set of comments, but on hundreds or thousands they tend to produce high-level summaries rather than consistent per-comment classifications, with outputs that can vary between runs.
@@ -14,7 +10,7 @@ Tally addresses this gap: unlabelled feedback where categories are not known in 
 
 ## Approach
 
-Tally uses a multi-pass pipeline. The first pass discovers recurring themes directly from the data by running theme discovery on several independent samples and merging the results, retaining only themes that appear consistently across samples. Classical unsupervised alternatives (embedding-based clustering, or topic models such as LDA) were rejected because they return word clusters that still need manual labelling to become reportable themes, whereas the LLM returns named, human-readable themes directly. An optional domain context (e.g. "a restaurant") can focus discovery toward relevant themes. A classification pass then labels each comment with a primary theme, optional secondary themes, sentiment, and two scores: confidence (certainty among the offered themes) and fit (how well the comment matches that theme). Comments that fit no theme are re-clustered by a second discovery pass into broader themes rather than labelled individually; genuinely contentless comments are flagged for exclusion instead of forced into a label. All model calls run at temperature 0 to maximise reproducibility.
+Tally uses a multi-pass pipeline. The first pass discovers recurring themes directly from the data by running theme discovery on several independent samples and merging the results, retaining only themes that appear consistently across samples. Classical unsupervised alternatives (embedding-based clustering) were rejected because they return word clusters that still need manual labelling to become reportable themes, whereas the LLM returns named, human-readable themes directly. An optional domain context ("a restaurant") can focus discovery toward relevant themes. A classification pass then labels each comment with a primary theme, optional secondary themes, sentiment, and two scores: confidence (certainty among the offered themes) and fit (how well the comment matches that theme). Comments that fit no theme are re-clustered by a second discovery pass into broader themes; opinions with no topics ("love it") fall to a fixed "General sentiment" theme, and genuinely contentless comments are flagged for exclusion. All model calls run at temperature 0 to maximise reproducibility.
 
 Traditional supervised classifiers, such as TF-IDF-based models, require labelled in-domain training data before they can be used; Tally instead generates a usable theme set directly from raw, unlabelled text. To evaluate classification independently of discovery, a bypass mode accepts a fixed set of reference categories in place of the discovered themes. These per-comment classifications also power higher-level analyses: multi-label counts, comparisons across time periods, segment analysis, and significance testing.
 
@@ -40,7 +36,7 @@ Classification performance is evaluated against human-labelled ground truth. Sen
 
 The system's limitations are explicit. Tally analyses one text column and one segmentation dimension at a time. User corrections update the dashboard and exports but are session-only. Trend analysis compares uploaded datasets rather than continuously monitoring incoming data. Z-score anomaly detection cannot identify a perfectly stable theme that suddenly spikes, because a near-zero baseline variance makes the statistic undefined; the complementary two-proportion significance test detects these cases.
 
-Future work would be: formally evaluating the multi-label, fit, and exclusion predictions; extending the evaluation to the full CFPB taxonomy; re-running it on a second, non-financial domain; persisting user corrections; applying multiple-comparison corrections; and improving run-to-run consistency.
+Future work would be: formally evaluating the multi-label, fit, and exclusion; extending the evaluation to the full CFPB taxonomy; re-running it on a second, non-financial domain; persisting user corrections; applying multiple-comparison corrections; and improving run-to-run consistency.
 
 ---
 
