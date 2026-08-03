@@ -28,6 +28,7 @@ export default function App() {
   const [segmentBy, setSegmentBy] = useState(null);
   const [showLanding, setShowLanding] = useState(false);
   const [context, setContext] = useState("");
+  const [pending, setPending] = useState({});
 
   // Get the effective theme
   // If user has corrected then theme, use it; otherwise, use original one
@@ -48,6 +49,7 @@ export default function App() {
     setVisibleCount(20);
     setSearch("");
     setContext("");
+    setPending({});
     // setProgress(null);
 
     const form = new FormData();
@@ -445,6 +447,23 @@ export default function App() {
                   {data.results.filter((r, i) => r.needs_review && corrections[i] !== EXCLUDED).length} low-confidence or unmatched
                 </span>
               </div>
+              <button
+                className="confirm-btn"
+                onClick={() => {
+                  const next = { ...corrections };
+                  data.results.forEach((r, i) => {
+                    if (!r.needs_review) return;
+                    const aiDefault = r.suggest_exclude
+                      ? EXCLUDED
+                      : (r.theme === "Other" && r.suggested_theme ? r.suggested_theme : r.theme);
+                    next[i] = pending[i] ?? corrections[i] ?? aiDefault;
+                  });
+                  setCorrections(next);
+                  setPending({});
+                }}
+              >
+                Confirm all
+              </button>
               <p className="review-note">
                 These comments were classified with low confidence, or matched no theme. Correct the
                 theme if needed — changes update the charts and the exported CSV.
@@ -452,47 +471,42 @@ export default function App() {
               {data.results.map((r, i) => {
                 if (!r.needs_review) return null;
 
-                // Default: suggest exclude for junk; else the AI-suggested theme; else its theme.
                 const aiDefault = r.suggest_exclude
                   ? EXCLUDED
                   : (r.theme === "Other" && r.suggested_theme ? r.suggested_theme : r.theme);
-                const selected = corrections[i] ?? aiDefault;
 
-                // Keep an off-list suggested theme selectable.
+                const shown = pending[i] ?? corrections[i] ?? aiDefault;      // what the dropdown shows
+                const confirmed = corrections[i] != null && pending[i] == null;
+
                 const baseOptions = [...data.themes, "Other"];
                 const options =
                   r.suggested_theme && !r.suggest_exclude && !baseOptions.includes(r.suggested_theme)
                     ? [...data.themes, r.suggested_theme, "Other"]
                     : baseOptions;
 
-                const untouched = corrections[i] == null;
-
                 return (
                   <div className={`review-row ${corrections[i] === EXCLUDED ? "is-excluded" : ""}`} key={i}>
                     <div className="review-comment">{r.comment}</div>
                     <div className="review-controls">
                       <span className="conf-badge">
-                        {r.review_reason || (r.theme === "Other" ? "no theme matched" : `conf ${r.confidence?.toFixed(2)}`)}
+                        {r.suggest_exclude ? "not usable feedback" : (r.review_reason || "no theme matched")}
                       </span>
-                      <select
-                        value={selected}
-                        onChange={(e) => setCorrections({ ...corrections, [i]: e.target.value })}
-                      >
+                      <select value={shown} onChange={(e) => setPending({ ...pending, [i]: e.target.value })}>
                         {options.map(t => <option key={t} value={t}>{t}</option>)}
                         <option value={EXCLUDED}>— Exclude (not feedback)</option>
                       </select>
-                      {corrections[i] === EXCLUDED && <span className="excluded-tag">excluded</span>}
-                      {corrections[i] && corrections[i] !== EXCLUDED && corrections[i] !== aiDefault && (
-                        <span className="corrected-tag">corrected</span>
-                      )}
-                      {untouched && !r.suggest_exclude && r.theme === "Other" && r.suggested_theme && (
-                        <button
-                          className="accept-btn"
-                          onClick={() => setCorrections({ ...corrections, [i]: r.suggested_theme })}
-                        >
-                          Accept
-                        </button>
-                      )}
+                      <button
+                        className="confirm-btn"
+                        disabled={confirmed}
+                        onClick={() => {
+                          setCorrections({ ...corrections, [i]: shown });
+                          setPending(p => { const n = { ...p }; delete n[i]; return n; });
+                        }}
+                      >
+                        {confirmed ? "Confirmed" : "Confirm"}
+                      </button>
+                      {confirmed && corrections[i] === EXCLUDED && <span className="excluded-tag">excluded</span>}
+                      {confirmed && corrections[i] !== EXCLUDED && <span className="corrected-tag">confirmed</span>}
                     </div>
                   </div>
                 );
