@@ -20,20 +20,6 @@ Built for the case where manual review doesn't scale and a general chatbot skims
 
 ---
 
-## Evidence
-
-Evaluated on 360 CFPB complaints (6 balanced categories, fixed seed, temperature 0), with success criteria pre-registered before evaluation.
-
-| Method | Macro-F1 | Cohen's κ |
-|---|---|---|
-| Keyword baseline | 0.541 | 0.420 |
-| TF-IDF + LogReg (trained on 360 labels) | 0.779 | 0.737 |
-| **Tally (LLM, zero training)** | **0.736** | **0.827** |
-
-Competitive with a trained baseline **without any labelled training data** — higher κ, slightly lower Macro-F1. Runs at ~$0.38 per 1,000 comments. See `backend/RESULTS.md` for full methodology and `WRITEUP.md` for the complete write-up.
-
----
-
 ## Live demo
 
 **[https://tally-indol.vercel.app]**
@@ -77,7 +63,7 @@ python verify_stats.py        # verifies hand-rolled stats against SciPy
 
 ## Repository guide
 
-- `backend/pipeline.py` — the two-pass theme-discovery and classification pipeline (the core method).
+- `backend/pipeline.py` — the multi-pass theme-discovery and classification pipeline (the core method).
 - `backend/api.py` — FastAPI endpoints, robust CSV parsing, parallel classification, and the statistical tests.
 - `backend/SUCCESS_CRITERIA.md` — success criteria, pre-registered (git-timestamped) before evaluation.
 - `backend/RESULTS.md` — evaluation methodology and measured results.
@@ -88,7 +74,3 @@ python verify_stats.py        # verifies hand-rolled stats against SciPy
 - `WRITEUP.md` — the five-pillar write-up.
 
 ---
-
-## Limitations
-
-Tally analyses one text column and one segmentation dimension at a time. User corrections are session-only. Sentiment is illustrative, not evaluated. Trend analysis compares uploaded datasets rather than continuously monitoring. See `LIMITATIONS.md` for the full list and planned next steps.
