@@ -1,5 +1,3 @@
-> **Note:** The current headline numbers are in the **Day 13 — Re-run** section at the end of this file. The Day 5 figures below predate a classification-prompt change (added abstention) and are retained as a record, not as the current result.
-
 # Results (Day 5)
 Eval set: 360 CFPB complaints, 6 balanced categories, SEED=42, gpt-5.4-mini.
 ## Accuracy vs. human labels
@@ -69,7 +67,7 @@ seed, and model are identical.
 - **Macro-F1 = 0.690** — beats the keyword baseline by +0.149; trails TF-IDF (0.779),
   a wider gap than Day 5.
 - The dual result holds: **TF-IDF leads macro-F1, Tally leads κ.**
-- **† Frontier row is stale:** `predictions_frontier.csv` was not regenerated under the
+- **Frontier row is stale:** `predictions_frontier.csv` was not regenerated under the
   new prompt, so the apparent +0.052 F1 / +0.082 κ gap is a mixed-prompt artifact
   (new-prompt mini vs old-prompt frontier). **Re-run the frontier generator before
   treating the frontier comparison as final.**
