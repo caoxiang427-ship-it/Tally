@@ -278,6 +278,10 @@ When the "Other" bucket was large, it became the top theme for several segments,
 
 **Fix:** "Other" is excluded from the segment contingency table and top-theme selection, so breakdowns and anomaly callouts report the strongest genuine theme per segment.
 
+### [Finding] Give default theme ("General sentiment") for comments with no topics
 
+General reactions with clear sentiment but no specific topic ("LOVE IT", "hands down my favourite", "worst ever") kept landing in "Other" with high fit, because they are genuine feedback that matches no concrete theme. Relying on discovery to surface them was unreliable, it produced near-duplicate one-off labels ("general praise" vs "General praise", "taste", "recipe praise").
+
+**Fix:** Added a fixed built-in "General sentiment" theme, always present in the theme list, for comments expressing overall positive or negative feeling without a specific topic. Also removed free-text per-comment suggestions for leftover "Other" rows (they fragmented into micro-themes); such rows now show plain "Other" with a manual dropdown. This cleanly splits the old "Other" pile into three: General sentiment (real, topicless), specific themes, and exclusion (junk).
 
 
